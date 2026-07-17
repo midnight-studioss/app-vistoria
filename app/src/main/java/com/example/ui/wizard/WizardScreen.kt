@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +39,7 @@ import androidx.compose.animation.togetherWith
 fun WizardScreen(
     viewModel: WizardViewModel,
     inspectionId: Long,
+    companyName: String = "BR SOLAR",
     onNavigateBack: () -> Unit
 ) {
     LaunchedEffect(inspectionId) {
@@ -101,8 +105,8 @@ fun WizardScreen(
                     
                     val isNextEnabled = when (currentStep) {
                         0 -> inspection!!.latitude != null && inspection!!.longitude != null && inspection!!.address.isNotBlank()
-                        1 -> inspection!!.clientName.isNotBlank()
-                        2 -> inspection!!.meterBoxType.isNotBlank() && inspection!!.connectionType.isNotBlank() && inspection!!.mainBreaker.isNotBlank() && inspection!!.voltage.isNotBlank()
+                        1 -> inspection!!.clientFirstName.isNotBlank() && inspection!!.clientLastName.isNotBlank()
+                        2 -> inspection!!.connectionType.isNotBlank() && inspection!!.mainBreaker.isNotBlank() && inspection!!.voltage.isNotBlank()
                         3 -> inspection!!.roofType.isNotBlank() && inspection!!.roofInclination.isNotBlank() && inspection!!.inverterLocation.isNotBlank()
                         4 -> inspection!!.photoMeterUri != null && inspection!!.photoBreakerUri != null && inspection!!.photoPanelUri != null && inspection!!.photoRoofUri != null && inspection!!.photoGeneralUri != null
                         5 -> true // Observations can be empty
@@ -158,7 +162,7 @@ fun WizardScreen(
                         4 -> PhotosStep(inspection!!, viewModel)
                         5 -> ObservationsStep(inspection!!, viewModel)
                         6 -> SignaturesStep(inspection!!, viewModel)
-                        7 -> SummaryStep(inspection!!)
+                        7 -> SummaryStep(inspection!!, companyName)
                     }
                 }
             }
@@ -210,23 +214,21 @@ fun ClientDataStep(inspection: Inspection, viewModel: WizardViewModel) {
         enabled = false
     )
     OutlinedTextField(
-        value = inspection.clientName,
-        onValueChange = { v -> viewModel.updateField { it.copy(clientName = v) } },
+        value = inspection.clientFirstName,
+        onValueChange = { v -> viewModel.updateField { it.copy(clientFirstName = v) } },
         label = { Text("Nome do Cliente *") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedTextField(
+        value = inspection.clientLastName,
+        onValueChange = { v -> viewModel.updateField { it.copy(clientLastName = v) } },
+        label = { Text("Sobrenome do Cliente *") },
         modifier = Modifier.fillMaxWidth()
     )
 }
 
 @Composable
 fun TechnicalDataStep(inspection: Inspection, viewModel: WizardViewModel) {
-    OutlinedTextField(
-        value = inspection.meterBoxType,
-        onValueChange = { v -> viewModel.updateField { it.copy(meterBoxType = v) } },
-        label = { Text("Tipo de Medidor (Concessionária) *") },
-        modifier = Modifier.fillMaxWidth()
-    )
-    
-    Spacer(modifier = Modifier.height(8.dp))
     Text("Ligação *", style = MaterialTheme.typography.titleSmall)
     val connections = listOf("Monofásico", "Bifásico", "Trifásico")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -446,14 +448,53 @@ fun ObservationsStep(inspection: Inspection, viewModel: WizardViewModel) {
 }
 
 @Composable
-fun SummaryStep(inspection: Inspection) {
+fun SummaryStep(inspection: Inspection, companyName: String = "BR SOLAR") {
     val context = LocalContext.current
     
-    Text("Resumo da Vistoria", style = MaterialTheme.typography.titleLarge)
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf"),
+        onResult = { uri ->
+            if (uri != null) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        val bytes = com.example.util.PdfGenerator.generatePdfBytes(context, inspection, companyName)
+                        outputStream.write(bytes)
+                    }
+                    android.widget.Toast.makeText(context, "Relatório PDF salvo com sucesso!", android.widget.Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    android.widget.Toast.makeText(context, "Erro ao salvar PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    )
+    
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Resumo da Vistoria", style = MaterialTheme.typography.titleLarge)
+        
+        Button(
+            onClick = {
+                val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
+                val clientNameClean = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
+                val fileName = "Vistoria_${clientNameClean.replace("\\s+".toRegex(), "_")}.pdf"
+                createDocumentLauncher.launch(fileName)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF", modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Salvar PDF")
+        }
+    }
     
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Cliente: ${inspection.clientName}", style = MaterialTheme.typography.titleMedium)
+            Text("Cliente: ${inspection.clientFirstName} ${inspection.clientLastName}".trim(), style = MaterialTheme.typography.titleMedium)
             Text("ID: ${inspection.clientIdString}")
             Text("Endereço: ${inspection.address}")
             
@@ -472,7 +513,6 @@ fun SummaryStep(inspection: Inspection) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Dados Técnicos", style = MaterialTheme.typography.titleMedium)
-            Text("Medidor: ${inspection.meterBoxType}")
             Text("Ligação: ${inspection.connectionType}")
             Text("Disjuntor: ${inspection.mainBreaker}")
             Text("Tensão: ${inspection.voltage}")

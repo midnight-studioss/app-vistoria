@@ -54,7 +54,8 @@ data class Inspection(
     val address: String = "",
     
     // Client Data
-    val clientName: String = "",
+    val clientFirstName: String = "",
+    val clientLastName: String = "",
     val clientIdString: String = "",
     
     // Technical Data

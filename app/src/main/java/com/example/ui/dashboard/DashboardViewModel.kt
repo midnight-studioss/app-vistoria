@@ -25,4 +25,16 @@ class DashboardViewModel(
         val id = repository.createInitialInspection(randomId)
         onCreated(id)
     }
+
+    fun deleteInspection(id: Long) {
+        viewModelScope.launch {
+            repository.deleteInspection(id)
+        }
+    }
+
+    fun updateInspection(inspection: Inspection) {
+        viewModelScope.launch {
+            repository.updateInspection(inspection)
+        }
+    }
 }

@@ -19,6 +19,8 @@ import com.example.ui.wizard.WizardViewModel
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.example.data.UserPreferences
 import com.example.ui.login.LoginScreen
 
@@ -31,6 +33,8 @@ fun SolarApp() {
         val factory = remember { AppViewModelFactory(repository) }
         val userPreferences = remember { UserPreferences(context) }
         val userName by userPreferences.userName.collectAsState(initial = null)
+        val companyName by userPreferences.companyName.collectAsState(initial = "BR Solar")
+        val scope = rememberCoroutineScope()
         
         val navController = rememberNavController()
         
@@ -55,6 +59,12 @@ fun SolarApp() {
                 DashboardScreen(
                     viewModel = dashboardViewModel,
                     userName = userName ?: "",
+                    companyName = companyName ?: "BR Solar",
+                    onSaveCompanyName = { newName ->
+                        scope.launch {
+                            userPreferences.saveCompanyName(newName)
+                        }
+                    },
                     onNavigateToWizard = { inspectionId ->
                         navController.navigate("wizard/$inspectionId")
                     }
@@ -67,6 +77,7 @@ fun SolarApp() {
                 WizardScreen(
                     viewModel = wizardViewModel,
                     inspectionId = inspectionId,
+                    companyName = companyName ?: "BR Solar",
                     onNavigateBack = {
                         navController.popBackStack()
                     }

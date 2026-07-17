@@ -20,6 +20,8 @@ class SolarRepository(private val db: AppDatabase) {
     
     suspend fun updateInspection(inspection: Inspection) = db.inspectionDao().updateInspection(inspection)
     
+    suspend fun deleteInspection(id: Long) = db.inspectionDao().deleteInspectionById(id)
+    
     fun getPhotos(inspectionId: Long): Flow<List<Photo>> = db.photoDao().getPhotosForInspection(inspectionId)
     
     suspend fun addPhoto(photo: Photo) = db.photoDao().insertPhoto(photo)

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [Client::class, Project::class, Inspection::class, Photo::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "br_solar_database"
+                    "br_solar_database_v3"
                 )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

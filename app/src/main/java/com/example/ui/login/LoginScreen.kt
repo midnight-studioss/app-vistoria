@@ -44,16 +44,16 @@ class LoginViewModel(private val userPreferences: UserPreferences) : ViewModel()
     }
 
     fun login(onSuccess: () -> Unit) {
-        val validPass = password == "Vistoria 123" || password == "1234"
+        val validUser = name.trim().equals("BR SOLAR", ignoreCase = true)
+        val validPass = password == "BRSOLAR123"
         
-        if (name.isNotBlank() && validPass) {
+        val validAdmin = name.trim().equals("admin", ignoreCase = true)
+        val validAdminPass = password == "Miguel123"
+        
+        if ((validUser && validPass) || (validAdmin && validAdminPass)) {
             viewModelScope.launch {
-                val displayName = if (name.trim().equals("BR Solar Vistoria", ignoreCase = true) || name.trim().equals("BR Solar", ignoreCase = true)) {
-                    "Vistoriador"
-                } else {
-                    name.trim()
-                }
-                userPreferences.saveUserName(displayName)
+                val userType = if (validAdmin) "Administrador" else "BR SOLAR"
+                userPreferences.saveUserName(userType)
                 onSuccess()
             }
         } else {

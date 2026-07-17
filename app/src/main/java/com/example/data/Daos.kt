@@ -42,6 +42,9 @@ interface InspectionDao {
     
     @Update
     suspend fun updateInspection(inspection: Inspection)
+
+    @Query("DELETE FROM inspections WHERE id = :id")
+    suspend fun deleteInspectionById(id: Long)
 }
 
 @Dao
