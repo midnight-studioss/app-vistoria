@@ -1,0 +1,6 @@
+{
+  "name": "BR Solar",
+  "description": "Aplicativo para vistoria técnica de instalações de energia solar, com processo passo a passo, captura de fotos e assinatura digital.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
