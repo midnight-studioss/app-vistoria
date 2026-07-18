@@ -13,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -102,26 +104,27 @@ fun LoginScreen(
                         .padding(horizontal = 32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(96.dp)
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.size(120.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.SolarPower,
-                            contentDescription = "Logo",
-                            modifier = Modifier
-                                .padding(24.dp)
-                                .fillMaxSize(),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        Image(
+                            painter = painterResource(id = com.example.R.drawable.br_solar),
+                            contentDescription = "Logo BR Solar",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     
                     Text(
                         text = "BR Solar",
-                        style = MaterialTheme.typography.displaySmall,
+                        style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -192,6 +195,15 @@ fun LoginScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                    
+                    Spacer(modifier = Modifier.height(40.dp))
+                    
+                    Text(
+                        text = "Create by Midnight Studios.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }

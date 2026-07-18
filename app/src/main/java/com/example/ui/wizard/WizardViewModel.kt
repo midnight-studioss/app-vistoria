@@ -113,7 +113,7 @@ class WizardViewModel(
     }
 
     fun nextStep() {
-        if (_currentStep.value < 8) {
+        if (_currentStep.value < 7) {
             _currentStep.value++
             autoSave()
         }

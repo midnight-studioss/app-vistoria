@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import com.example.data.Inspection
 
 import androidx.compose.animation.AnimatedContent
@@ -33,6 +34,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,8 +210,29 @@ fun LocationStep(inspection: Inspection, viewModel: WizardViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
     } else {
-        Text("Aguardando localização...")
-        CircularProgressIndicator()
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
+        ) {
+            Text("Aguardando localização GPS...", style = MaterialTheme.typography.bodyMedium)
+            CircularProgressIndicator(modifier = Modifier.size(36.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    viewModel.updateField { 
+                        it.copy(
+                            latitude = -23.55052,
+                            longitude = -46.633308,
+                            gpsAccuracy = 10f,
+                            address = "Av. Paulista, 1000 - São Paulo"
+                        )
+                    }
+                }
+            ) {
+                Text("Preencher Manualmente")
+            }
+        }
     }
 }
 
@@ -343,13 +375,14 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
         if (bitmap != null && currentPhotoType != null) {
             viewModel.analyzePhoto(bitmap) { isClear ->
                 if (isClear) {
-                    val dummyUri = "content://photo_${System.currentTimeMillis()}"
+                    val prefix = currentPhotoType?.replace("?", "")?.replace(" ", "_") ?: "photo"
+                    val fileUri = saveBitmapToCache(context, bitmap, prefix) ?: "content://photo_${System.currentTimeMillis()}"
                     when (currentPhotoType) {
-                        "Medidor" -> viewModel.updateField { it.copy(photoMeterUri = dummyUri) }
-                        "Disjuntor" -> viewModel.updateField { it.copy(photoBreakerUri = dummyUri) }
-                        "Quadro Elétrico" -> viewModel.updateField { it.copy(photoPanelUri = dummyUri) }
-                        "Telhado" -> viewModel.updateField { it.copy(photoRoofUri = dummyUri) }
-                        "Onde vai ficar o inversor?" -> viewModel.updateField { it.copy(photoGeneralUri = dummyUri) }
+                        "Medidor" -> viewModel.updateField { it.copy(photoMeterUri = fileUri) }
+                        "Disjuntor" -> viewModel.updateField { it.copy(photoBreakerUri = fileUri) }
+                        "Quadro Elétrico" -> viewModel.updateField { it.copy(photoPanelUri = fileUri) }
+                        "Telhado" -> viewModel.updateField { it.copy(photoRoofUri = fileUri) }
+                        "Onde vai ficar o inversor?" -> viewModel.updateField { it.copy(photoGeneralUri = fileUri) }
                     }
                 }
                 currentPhotoType = null
@@ -433,6 +466,29 @@ fun SignaturesStep(inspection: Inspection, viewModel: WizardViewModel) {
         onValueChange = { v -> viewModel.updateField { it.copy(techName = v) } },
         label = { Text("Nome do Vistoriador *") },
         modifier = Modifier.fillMaxWidth()
+    )
+    
+    SignaturePad(
+        label = "Assinatura do Vistoriador",
+        currentSignatureUri = inspection.techSignatureUri,
+        onSaveSignature = { uri -> viewModel.updateField { it.copy(techSignatureUri = uri) } },
+        onClearSignature = { viewModel.updateField { it.copy(techSignatureUri = null) } }
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = inspection.clientRepName,
+        onValueChange = { v -> viewModel.updateField { it.copy(clientRepName = v) } },
+        label = { Text("Nome do Responsável / Cliente") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    
+    SignaturePad(
+        label = "Assinatura do Responsável (Cliente)",
+        currentSignatureUri = inspection.clientSignatureUri,
+        onSaveSignature = { uri -> viewModel.updateField { it.copy(clientSignatureUri = uri) } },
+        onClearSignature = { viewModel.updateField { it.copy(clientSignatureUri = null) } }
     )
 }
 
@@ -527,5 +583,174 @@ fun SummaryStep(inspection: Inspection, companyName: String = "BR SOLAR") {
             Text("Arranjo: ${inspection.arrayArrangement}")
             Text("Local Inversor: ${inspection.inverterLocation}")
         }
+    }
+}
+
+class LinePath(val points: MutableList<android.graphics.PointF> = mutableStateListOf())
+
+@Composable
+fun SignaturePad(
+    label: String,
+    currentSignatureUri: String?,
+    onSaveSignature: (String) -> Unit,
+    onClearSignature: () -> Unit
+) {
+    val context = LocalContext.current
+    val paths = remember { mutableStateListOf<LinePath>() }
+    var hasSigned by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.titleSmall)
+        
+        if (currentSignatureUri != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Assinatura Salva", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                IconButton(
+                    onClick = { onClearSignature() },
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Limpar")
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(Color.White, RoundedCornerShape(8.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                hasSigned = true
+                                val newPath = LinePath(mutableStateListOf(android.graphics.PointF(offset.x, offset.y)))
+                                paths.add(newPath)
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                paths.lastOrNull()?.points?.add(
+                                    android.graphics.PointF(change.position.x, change.position.y)
+                                )
+                            }
+                        )
+                    }
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    paths.forEach { path ->
+                        val composePath = Path()
+                        path.points.forEachIndexed { idx, pt ->
+                            if (idx == 0) composePath.moveTo(pt.x, pt.y)
+                            else composePath.lineTo(pt.x, pt.y)
+                        }
+                        drawPath(
+                            composePath,
+                            color = Color.Black,
+                            style = Stroke(
+                                width = 5f,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                    }
+                }
+                
+                if (!hasSigned) {
+                    Text(
+                        "Assine aqui com o dedo",
+                        modifier = Modifier.align(Alignment.Center),
+                        color = Color.LightGray
+                    )
+                }
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        paths.clear()
+                        hasSigned = false
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Limpar")
+                }
+                
+                Button(
+                    onClick = {
+                        val savedUri = saveSignatureToCache(context, paths, 400, 120)
+                        if (savedUri != null) {
+                            onSaveSignature(savedUri)
+                        }
+                    },
+                    enabled = hasSigned,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Salvar")
+                }
+            }
+        }
+    }
+}
+
+fun saveSignatureToCache(context: Context, paths: List<LinePath>, width: Int, height: Int): String? {
+    if (paths.isEmpty()) return null
+    return try {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.BLACK
+            strokeWidth = 6f
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+            isAntiAlias = true
+        }
+        
+        paths.forEach { path ->
+            val androidPath = android.graphics.Path()
+            path.points.forEachIndexed { idx, pt ->
+                if (idx == 0) androidPath.moveTo(pt.x, pt.y)
+                else androidPath.lineTo(pt.x, pt.y)
+            }
+            canvas.drawPath(androidPath, paint)
+        }
+        
+        val file = java.io.File(context.cacheDir, "sig_${System.currentTimeMillis()}.jpg")
+        java.io.FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        Uri.fromFile(file).toString()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+fun saveBitmapToCache(context: Context, bitmap: Bitmap, prefix: String): String? {
+    return try {
+        val file = java.io.File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg")
+        java.io.FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        Uri.fromFile(file).toString()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }

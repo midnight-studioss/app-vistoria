@@ -1,21 +1,37 @@
+# BR Solar - Sistema de Vistorias Técnicas ☀️
+
+Este é o aplicativo profissional de vistorias técnicas para **BR Solar**, projetado para rodar diretamente em seu celular Android, sem precisar de nenhum emulador ou configuração complexa!
+
+---
+
+## 📥 Instalar Diretamente no seu Celular (Download Direto)
+
+Clique em um dos botões abaixo para baixar o aplicativo diretamente em formato `.apk` e instalar no seu smartphone imediatamente:
+
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+  <a href="https://ais-dev-ecembyohrstuhvs67zfcow-137985153015.us-east5.run.app/app.apk" style="text-decoration:none;">
+    <img src="https://img.shields.io/badge/INSTALL-BAIXAR_APK_DIRETO-FF9100?style=for-the-badge&logo=android&logoColor=white" alt="Botão Instalar" />
+  </a>
 </div>
 
-# Run and deploy your AI Studio app
+### 🔗 Links Alternativos para Download Direto:
+* **[Link de Download Direto (Servidor Principal)](https://ais-dev-ecembyohrstuhvs67zfcow-137985153015.us-east5.run.app/app.apk)**
+* **[Link de Download Direto (Servidor Secundário)](https://ais-pre-ecembyohrstuhvs67zfcow-137985153015.us-east5.run.app/app.apk)**
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/40e83e9b-73ee-459b-ad79-0c4d98264058
+## 🛠️ Como instalar no seu Celular Android:
+1. **Baixar:** Clique no botão **INSTALL** acima ou use um dos links de download direto.
+2. **Autorizar:** Se o seu celular perguntar, autorize a instalação de fontes desconhecidas (isso é normal para aplicativos baixados fora da Google Play Store).
+3. **Instalar:** Abra o arquivo `.apk` baixado e clique em **Instalar**.
+4. **Pronto!** O aplicativo já estará pronto na sua tela inicial com o ícone oficial da **BR Solar**.
 
-## Run Locally
+---
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+## ✨ Recursos Principais:
+* **Identidade Visual Premium:** Tela de login customizada com o logotipo oficial da BR Solar.
+* **Geração de PDF Personalizada:** Relatórios de vistoria completos gerados instantaneamente com a logomarca configurada da sua empresa.
+* **Geolocalização Automática:** Coleta de coordenadas exatas de latitude e longitude das vistorias.
+* **Assinatura e Fotos:** Captura e anexação direta de fotos e assinaturas no documento oficial.
 
-
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+*Desenvolvido por Midnight Studios.* 🚀
