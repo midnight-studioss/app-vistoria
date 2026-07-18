@@ -1,7 +1,4 @@
 package com.example.api
-
-import com.example.BuildConfig
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -51,7 +48,7 @@ data class Candidate(
 // --- Retrofit Setup ---
 
 interface GeminiApiService {
-    @POST("v1beta/models/gemini-3.1-pro-preview:generateContent")
+    @POST("v1beta/models/gemini-1.5-flash:generateContent")
     suspend fun generateContent(
         @Query("key") apiKey: String,
         @Body request: GenerateContentRequest

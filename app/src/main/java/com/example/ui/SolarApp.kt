@@ -13,7 +13,7 @@ import com.example.data.AppDatabase
 import com.example.data.SolarRepository
 import com.example.ui.dashboard.DashboardScreen
 import com.example.ui.dashboard.DashboardViewModel
-import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.BRSolarTheme
 import com.example.ui.wizard.WizardScreen
 import com.example.ui.wizard.WizardViewModel
 
@@ -26,7 +26,7 @@ import com.example.ui.login.LoginScreen
 
 @Composable
 fun SolarApp() {
-    MyApplicationTheme(dynamicColor = false) {
+    BRSolarTheme(dynamicColor = false) {
         val context = LocalContext.current
         val database = remember { AppDatabase.getDatabase(context) }
         val repository = remember { SolarRepository(database) }

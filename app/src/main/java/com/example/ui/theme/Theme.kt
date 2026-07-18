@@ -32,7 +32,7 @@ private val LightColorScheme =
   )
 
 @Composable
-fun MyApplicationTheme(
+fun BRSolarTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
   // Disable dynamic color to enforce brand identity
   dynamicColor: Boolean = false,
