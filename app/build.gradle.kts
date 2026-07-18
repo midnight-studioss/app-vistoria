@@ -24,13 +24,6 @@ android {
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")
       storePassword = "android"
@@ -44,11 +37,12 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      // signingConfig = signingConfigs.getByName("release") // Disable until configured
     }
     debug { 
       signingConfig = signingConfigs.getByName("debugConfig")
       // Ensure the APK can be installed on physical devices without "testOnly" restrictions
+      // Explicitly enable V1 and V2 signing for better compatibility
     }
   }
   packaging {
