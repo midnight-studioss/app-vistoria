@@ -99,7 +99,8 @@ data class Inspection(
     
     // Status
     val currentStep: Int = 0,
-    val isCompleted: Boolean = false
+    @get:com.google.firebase.firestore.PropertyName("isCompleted") @set:com.google.firebase.firestore.PropertyName("isCompleted") var isCompleted: Boolean = false,
+    val lastUpdated: Long = System.currentTimeMillis()
 )
 
 @Entity(

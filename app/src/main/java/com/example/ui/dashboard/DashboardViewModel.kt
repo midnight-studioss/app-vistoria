@@ -9,13 +9,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 class DashboardViewModel(
     private val repository: SolarRepository
 ) : ViewModel() {
 
-    // Simple flow for testing; normally we'd list projects or inspections
-    // Let's list inspections for now. Actually, we don't have a direct query in Daos for all inspections.
-    // I will add a query for all inspections to Dao.
+    val syncStatus: StateFlow<String> = repository.syncStatus
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _syncMessage = MutableStateFlow<String?>(null)
+    val syncMessage: StateFlow<String?> = _syncMessage.asStateFlow()
+
+    fun clearSyncMessage() {
+        _syncMessage.value = null
+    }
 
     val inspections: StateFlow<List<Inspection>> = repository.getAllInspections()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -35,6 +46,20 @@ class DashboardViewModel(
     fun updateInspection(inspection: Inspection) {
         viewModelScope.launch {
             repository.updateInspection(inspection)
+        }
+    }
+
+    fun syncFromCloud() {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                repository.syncFromCloud()
+                _syncMessage.value = "Sincronização concluída com sucesso!"
+            } catch (e: Exception) {
+                _syncMessage.value = "Erro na sincronização: ${e.message}"
+            } finally {
+                _isSyncing.value = false
+            }
         }
     }
 }

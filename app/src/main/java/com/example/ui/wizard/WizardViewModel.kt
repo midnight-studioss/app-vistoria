@@ -40,6 +40,13 @@ class WizardViewModel(
     private val _isAnalyzingPhoto = MutableStateFlow(false)
     val isAnalyzingPhoto: StateFlow<Boolean> = _isAnalyzingPhoto.asStateFlow()
 
+    private val _currentPhotoType = MutableStateFlow<String?>(null)
+    val currentPhotoType: StateFlow<String?> = _currentPhotoType.asStateFlow()
+
+    fun setCurrentPhotoType(type: String?) {
+        _currentPhotoType.value = type
+    }
+
     fun clearPhotoMessage() {
         _photoAnalysisMessage.value = null
     }
@@ -85,44 +92,66 @@ class WizardViewModel(
         }
     }
 
+    private var isLoaded = false
+    private var saveJob: kotlinx.coroutines.Job? = null
+
     fun loadInspection(inspectionId: Long) {
+        if (isLoaded || _inspectionState.value != null) return
         viewModelScope.launch {
             repository.getInspection(inspectionId).collect { inspection ->
-                if (inspection != null) {
+                if (inspection != null && !isLoaded) {
                     _inspectionState.value = inspection
                     _currentStep.value = inspection.currentStep
+                    isLoaded = true
+                    android.util.Log.d("WizardViewModel", "Loaded inspection initially: ${inspection.id}")
                 }
             }
         }
     }
 
-    private fun autoSave() {
+    fun forceSave() {
+        saveJob?.cancel()
         val current = _inspectionState.value ?: return
         viewModelScope.launch {
+            android.util.Log.d("WizardViewModel", "Force saving inspection: ${current.id}")
             repository.updateInspection(current.copy(currentStep = _currentStep.value))
         }
     }
 
-    fun updateField(updater: (Inspection) -> Inspection) {
+    private fun autoSave() {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(1000) // Debounce typing by 1 second
+            val current = _inspectionState.value ?: return@launch
+            android.util.Log.d("WizardViewModel", "Debounced auto-saving inspection: ${current.id}")
+            repository.updateInspection(current.copy(currentStep = _currentStep.value))
+        }
+    }
+
+    fun updateField(force: Boolean = false, updater: (Inspection) -> Inspection) {
         _inspectionState.update { current ->
             if (current == null) return@update null
             val updated = updater(current)
             updated
         }
-        autoSave()
+        if (force) {
+            forceSave()
+        } else {
+            autoSave()
+        }
     }
 
     fun nextStep() {
         if (_currentStep.value < 7) {
             _currentStep.value++
-            autoSave()
+            forceSave()
         }
     }
 
     fun prevStep() {
         if (_currentStep.value > 0) {
             _currentStep.value--
-            autoSave()
+            forceSave()
         }
     }
 

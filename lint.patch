@@ -1,0 +1,16 @@
+--- app/build.gradle.kts
++++ app/build.gradle.kts
+@@ -53,6 +53,13 @@
+   buildFeatures {
+     compose = true
+     buildConfig = true
+   }
++
++  lint {
++    disable += "UseKtx"
++    disable += "IconDipSize"
++    disable += "NewerVersionAvailable"
++  }
++
+   testOptions {
+     unitTests {

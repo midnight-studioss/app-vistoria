@@ -26,6 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.data.Inspection
 
 import androidx.compose.animation.AnimatedContent
@@ -86,6 +89,7 @@ fun WizardScreen(
                         if (currentStep > 0) {
                             viewModel.prevStep()
                         } else {
+                            viewModel.forceSave()
                             onNavigateBack()
                         }
                     }) {
@@ -130,7 +134,7 @@ fun WizardScreen(
                             if (currentStep < stepTitles.size - 1) {
                                 viewModel.nextStep()
                             } else {
-                                viewModel.updateField { it.copy(isCompleted = true) }
+                                viewModel.updateField(force = true) { it.copy(isCompleted = true) }
                                 onNavigateBack()
                             }
                         },
@@ -324,15 +328,38 @@ fun ChecklistItem(label: String, value: Boolean?, onValueChange: (Boolean) -> Un
 @Composable
 fun RoofStep(inspection: Inspection, viewModel: WizardViewModel) {
     Text("Tipo do Telhado *", style = MaterialTheme.typography.titleSmall)
-    val roofTypes = listOf("Colonial/Cerâmica", "Metálico", "Fibrocimento", "Laje", "Outro")
+    var isOutros by remember { mutableStateOf(
+        inspection.roofType.isNotBlank() && inspection.roofType !in listOf("Colonial/Cerâmica", "Metálico", "Fibrocimento", "Laje")
+    ) }
+
+    val roofTypes = listOf("Colonial/Cerâmica", "Metálico", "Fibrocimento", "Laje", "Outros")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         roofTypes.forEach { type ->
             FilterChip(
-                selected = inspection.roofType == type,
-                onClick = { viewModel.updateField { it.copy(roofType = type) } },
+                selected = if (type == "Outros") isOutros else inspection.roofType == type,
+                onClick = { 
+                    if (type == "Outros") {
+                        isOutros = true
+                        if (inspection.roofType in listOf("Colonial/Cerâmica", "Metálico", "Fibrocimento", "Laje")) {
+                            viewModel.updateField { it.copy(roofType = "") }
+                        }
+                    } else {
+                        isOutros = false
+                        viewModel.updateField { it.copy(roofType = type) }
+                    }
+                },
                 label = { Text(type) }
             )
         }
+    }
+    
+    if (isOutros) {
+        OutlinedTextField(
+            value = if (inspection.roofType in listOf("Colonial/Cerâmica", "Metálico", "Fibrocimento", "Laje")) "" else inspection.roofType,
+            onValueChange = { v -> viewModel.updateField { it.copy(roofType = v) } },
+            label = { Text("Especifique o tipo do telhado *") },
+            modifier = Modifier.fillMaxWidth()
+        )
     }
     
     Spacer(modifier = Modifier.height(8.dp))
@@ -352,7 +379,7 @@ fun RoofStep(inspection: Inspection, viewModel: WizardViewModel) {
     OutlinedTextField(
         value = inspection.arrayArrangement,
         onValueChange = { v -> viewModel.updateField { it.copy(arrayArrangement = v) } },
-        label = { Text("Arranjo (Opcional)") },
+        label = { Text("Arranjo") },
         modifier = Modifier.fillMaxWidth()
     )
     OutlinedTextField(
@@ -366,7 +393,7 @@ fun RoofStep(inspection: Inspection, viewModel: WizardViewModel) {
 @Composable
 fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
     val context = LocalContext.current
-    var currentPhotoType by remember { mutableStateOf<String?>(null) }
+    val currentPhotoType by viewModel.currentPhotoType.collectAsState()
     val photoAnalysisMessage by viewModel.photoAnalysisMessage.collectAsState()
     val isAnalyzingPhoto by viewModel.isAnalyzingPhoto.collectAsState()
 
@@ -377,17 +404,17 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
                     val prefix = currentPhotoType?.replace("?", "")?.replace(" ", "_") ?: "photo"
                     val fileUri = saveBitmapToCache(context, bitmap, prefix) ?: "content://photo_${System.currentTimeMillis()}"
                     when (currentPhotoType) {
-                        "Medidor" -> viewModel.updateField { it.copy(photoMeterUri = fileUri) }
-                        "Disjuntor" -> viewModel.updateField { it.copy(photoBreakerUri = fileUri) }
-                        "Quadro Elétrico" -> viewModel.updateField { it.copy(photoPanelUri = fileUri) }
-                        "Telhado" -> viewModel.updateField { it.copy(photoRoofUri = fileUri) }
-                        "Onde vai ficar o inversor?" -> viewModel.updateField { it.copy(photoGeneralUri = fileUri) }
+                        "Medidor" -> viewModel.updateField(force = true) { it.copy(photoMeterUri = fileUri) }
+                        "Disjuntor" -> viewModel.updateField(force = true) { it.copy(photoBreakerUri = fileUri) }
+                        "Quadro Elétrico" -> viewModel.updateField(force = true) { it.copy(photoPanelUri = fileUri) }
+                        "Telhado" -> viewModel.updateField(force = true) { it.copy(photoRoofUri = fileUri) }
+                        "Onde vai ficar o inversor?" -> viewModel.updateField(force = true) { it.copy(photoGeneralUri = fileUri) }
                     }
                 }
-                currentPhotoType = null
+                viewModel.setCurrentPhotoType(null)
             }
         } else {
-            currentPhotoType = null
+            viewModel.setCurrentPhotoType(null)
         }
     }
 
@@ -419,7 +446,7 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
     }
 
     Text("Fotos Obrigatórias *", style = MaterialTheme.typography.titleMedium)
-    Text("Toque no ícone para capturar a foto correspondente.", style = MaterialTheme.typography.bodyMedium)
+    Text("Toque no item para capturar a foto correspondente.", style = MaterialTheme.typography.bodyMedium)
     
     val photoTypes = listOf(
         "Medidor" to inspection.photoMeterUri,
@@ -435,22 +462,77 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(enabled = !isAnalyzingPhoto) {
-                    currentPhotoType = type
+                    viewModel.setCurrentPhotoType(type)
                     cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                 },
             colors = CardDefaults.cardColors(
-                containerColor = if (isCaptured) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-            )
+                containerColor = if (isCaptured) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
+            ),
+            border = if (isCaptured) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null
         ) {
-            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (isCaptured) Icons.Default.Check else Icons.Default.CameraAlt, 
-                    contentDescription = null, 
-                    modifier = Modifier.size(40.dp), 
-                    tint = if (isCaptured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (uri != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Foto $type",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.3f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Capturada",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Tirar Foto",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                
                 Spacer(modifier = Modifier.width(16.dp))
-                Text(type, style = MaterialTheme.typography.titleMedium)
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = type,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (isCaptured) "Toque para substituir a foto" else "Toque para capturar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -506,24 +588,6 @@ fun ObservationsStep(inspection: Inspection, viewModel: WizardViewModel) {
 fun SummaryStep(inspection: Inspection, companyName: String = "BR SOLAR") {
     val context = LocalContext.current
     
-    val createDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/pdf"),
-        onResult = { uri ->
-            if (uri != null) {
-                try {
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        val bytes = com.example.util.PdfGenerator.generatePdfBytes(context, inspection, companyName)
-                        outputStream.write(bytes)
-                    }
-                    android.widget.Toast.makeText(context, "Relatório PDF salvo com sucesso!", android.widget.Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    android.widget.Toast.makeText(context, "Erro ao salvar PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    )
-    
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -533,10 +597,7 @@ fun SummaryStep(inspection: Inspection, companyName: String = "BR SOLAR") {
         
         Button(
             onClick = {
-                val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
-                val clientNameClean = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
-                val fileName = "Vistoria_${clientNameClean.replace("\\s+".toRegex(), "_")}.pdf"
-                createDocumentLauncher.launch(fileName)
+                com.example.util.PdfGenerator.savePdfDirectly(context, inspection, companyName)
             },
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
             shape = RoundedCornerShape(8.dp)
@@ -730,7 +791,11 @@ fun saveSignatureToCache(context: Context, paths: List<LinePath>, width: Int, he
             canvas.drawPath(androidPath, paint)
         }
         
-        val file = java.io.File(context.cacheDir, "sig_${System.currentTimeMillis()}.jpg")
+        val directory = java.io.File(context.filesDir, "signatures")
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
+        val file = java.io.File(directory, "sig_${System.currentTimeMillis()}.jpg")
         java.io.FileOutputStream(file).use { out ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
@@ -743,7 +808,11 @@ fun saveSignatureToCache(context: Context, paths: List<LinePath>, width: Int, he
 
 fun saveBitmapToCache(context: Context, bitmap: Bitmap, prefix: String): String? {
     return try {
-        val file = java.io.File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg")
+        val directory = java.io.File(context.filesDir, "photos")
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
+        val file = java.io.File(directory, "${prefix}_${System.currentTimeMillis()}.jpg")
         java.io.FileOutputStream(file).use { out ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }

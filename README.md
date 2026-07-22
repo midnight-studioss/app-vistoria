@@ -9,13 +9,27 @@ Este é o aplicativo profissional de vistorias técnicas para **BR Solar**, proj
 
 ---
 
-## 📥 Instruções de Instalação
+## 📥 Instalar Diretamente (Download Direto)
 
-Como este é um projeto em desenvolvimento no AI Studio, a forma mais segura de obter o APK atualizado é:
+Clique em um dos botões abaixo para baixar o aplicativo agora mesmo. Escolha o servidor que funcionar melhor para você:
 
-1.  No menu do **Google AI Studio**, procure pela opção de exportação ou **Download APK**.
-2.  Aguarde a conclusão do build (isso garante que você terá a versão com todas as correções de compatibilidade).
-3.  Transfira o arquivo `.apk` gerado para o seu celular.
+<div align="center">
+  <table style="border: none; background: transparent;">
+    <tr style="border: none; background: transparent;">
+      <td style="border: none; background: transparent; padding: 10px;">
+        <a href="https://ais-dev-ecembyohrstuhvs67zfcow-137985153015.us-east5.run.app/BR_Solar_App.apk" style="text-decoration:none;">
+          <img src="https://img.shields.io/badge/SERVIDOR_1-BAIXAR_APK-FF9100?style=for-the-badge&logo=android&logoColor=white&labelColor=333333" alt="Download Servidor 1" height="45"/>
+        </a>
+      </td>
+      <td style="border: none; background: transparent; padding: 10px;">
+        <a href="https://ais-pre-ecembyohrstuhvs67zfcow-137985153015.us-east5.run.app/BR_Solar_App.apk" style="text-decoration:none;">
+          <img src="https://img.shields.io/badge/SERVIDOR_2-BAIXAR_APK-007BFF?style=for-the-badge&logo=android&logoColor=white&labelColor=333333" alt="Download Servidor 2" height="45"/>
+        </a>
+      </td>
+    </tr>
+  </table>
+  <p><i>Versão estável compatível com Motorola, Samsung e Android 14/15</i></p>
+</div>
 
 ---
 

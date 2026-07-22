@@ -18,6 +18,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Link
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
@@ -62,39 +67,30 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     userName: String,
     companyName: String,
+    userPreferences: com.example.data.UserPreferences,
     onSaveCompanyName: (String) -> Unit,
     onNavigateToWizard: (Long) -> Unit
 ) {
     val inspections by viewModel.inspections.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
+    val syncMessage by viewModel.syncMessage.collectAsState()
+    val syncStatus by viewModel.syncStatus.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
+    LaunchedEffect(syncMessage) {
+        syncMessage?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.clearSyncMessage()
+        }
+    }
+    
     var showAdminArea by remember { mutableStateOf(false) }
     var showAdminAuthDialog by remember { mutableStateOf(false) }
+    var showEmailSettings by remember { mutableStateOf(false) }
     var inspectionToEdit by remember { mutableStateOf<Inspection?>(null) }
     var pdfInspectionToDownload by remember { mutableStateOf<Inspection?>(null) }
     
-    val createDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/pdf"),
-        onResult = { uri ->
-            if (uri != null && pdfInspectionToDownload != null) {
-                try {
-                    val targetInspection = pdfInspectionToDownload!!
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        val bytes = com.example.util.PdfGenerator.generatePdfBytes(context, targetInspection, companyName)
-                        outputStream.write(bytes)
-                    }
-                    android.widget.Toast.makeText(context, "Relatório PDF salvo com sucesso!", android.widget.Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    android.widget.Toast.makeText(context, "Erro ao salvar PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                } finally {
-                    pdfInspectionToDownload = null
-                }
-            }
-        }
-    )
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
@@ -128,7 +124,7 @@ fun DashboardScreen(
                     .height(200.dp)
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.img_solar_banner_1784325598399),
+                    painter = painterResource(id = R.drawable.img_solar_banner),
                     contentDescription = "Solar Banner Background",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -161,8 +157,85 @@ fun DashboardScreen(
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White
                         )
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        if (syncStatus.contains("Sincronizado")) Color(0xFF4CAF50)
+                                        else if (syncStatus.contains("Erro")) Color(0xFFF44336)
+                                        else Color(0xFFFFC107)
+                                    )
+                            )
+                            Text(
+                                text = syncStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { viewModel.syncFromCloud() },
+                                enabled = !isSyncing,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                if (isSyncing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Sincronizar",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isSyncing) "Sincronizando..." else "Sincronizar Nuvem",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { showEmailSettings = true },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(
+                                        Color.White.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Email,
+                                    contentDescription = "Configurar E-mail",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+
                         if (userName == "Administrador") {
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Button(
                                 onClick = { showAdminAuthDialog = true },
                                 colors = ButtonDefaults.buttonColors(
@@ -297,6 +370,13 @@ fun DashboardScreen(
         )
     }
 
+    if (showEmailSettings) {
+        EmailSettingsDialog(
+            userPreferences = userPreferences,
+            onDismiss = { showEmailSettings = false }
+        )
+    }
+
     if (showAdminArea) {
         AdminAreaDialog(
             inspections = inspections,
@@ -305,11 +385,7 @@ fun DashboardScreen(
             onUpdate = { inspection -> viewModel.updateInspection(inspection) },
             onEditClick = { inspection -> inspectionToEdit = inspection },
             onDownloadPdf = { inspection ->
-                pdfInspectionToDownload = inspection
-                val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
-                val clientNameClean = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
-                val fileName = "Vistoria_${clientNameClean.replace("\\s+".toRegex(), "_")}.pdf"
-                createDocumentLauncher.launch(fileName)
+                com.example.util.PdfGenerator.savePdfDirectly(context, inspection, companyName)
             }
         )
     }
@@ -916,6 +992,288 @@ fun AdminAuthDialog(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Confirmar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EmailSettingsDialog(
+    userPreferences: com.example.data.UserPreferences,
+    onDismiss: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val currentRecipient by userPreferences.emailRecipient.collectAsState(initial = "")
+    val currentSender by userPreferences.emailSender.collectAsState(initial = "")
+    val currentResendKey by userPreferences.resendApiKey.collectAsState(initial = "")
+    val currentSendMethod by userPreferences.sendMethod.collectAsState(initial = "manual")
+    val currentWebhookUrl by userPreferences.webhookUrl.collectAsState(initial = "")
+    val currentSmtpHost by userPreferences.smtpHost.collectAsState(initial = "smtp.gmail.com")
+    val currentSmtpPort by userPreferences.smtpPort.collectAsState(initial = "587")
+    val currentSmtpUsername by userPreferences.smtpUsername.collectAsState(initial = "")
+    val currentSmtpPassword by userPreferences.smtpPassword.collectAsState(initial = "")
+
+    var recipient by remember(currentRecipient) { mutableStateOf(currentRecipient ?: "") }
+    var sender by remember(currentSender) { mutableStateOf(currentSender ?: "") }
+    var resendKey by remember(currentResendKey) { mutableStateOf(currentResendKey ?: "") }
+    var sendMethod by remember(currentSendMethod) { mutableStateOf(currentSendMethod ?: "manual") }
+    var webhookUrl by remember(currentWebhookUrl) { mutableStateOf(currentWebhookUrl ?: "") }
+    var smtpHost by remember(currentSmtpHost) { mutableStateOf(currentSmtpHost ?: "smtp.gmail.com") }
+    var smtpPort by remember(currentSmtpPort) { mutableStateOf(currentSmtpPort ?: "587") }
+    var smtpUsername by remember(currentSmtpUsername) { mutableStateOf(currentSmtpUsername ?: "") }
+    var smtpPassword by remember(currentSmtpPassword) { mutableStateOf(currentSmtpPassword ?: "") }
+
+    var isPasswordVisible by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Email,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
+                )
+
+                Text(
+                    text = "Configuração de E-mail",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Configure o envio automático dos relatórios de vistoria em formato PDF.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Selection of Send Method
+                Text(
+                    text = "Modo de Envio:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("manual" to "Manual", "smtp" to "E-mail Direto (SMTP)").forEach { (methodId, label) ->
+                            FilterChip(
+                                selected = sendMethod == methodId,
+                                onClick = { sendMethod = methodId },
+                                label = { Text(label) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("resend" to "Resend API", "webhook" to "Webhook").forEach { (methodId, label) ->
+                            FilterChip(
+                                selected = sendMethod == methodId,
+                                onClick = { sendMethod = methodId },
+                                label = { Text(label) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                if (sendMethod == "manual") {
+                    Text(
+                        text = "No modo Manual, ao clicar em salvar, você poderá escolher o aplicativo de e-mail (Gmail, Outlook, etc.) para enviar o relatório.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Recipient Email field
+                OutlinedTextField(
+                    value = recipient,
+                    onValueChange = { recipient = it },
+                    label = { Text("E-mail Destinatário") },
+                    placeholder = { Text("exemplo@brsolar.com.br") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (sendMethod == "smtp") {
+                    Text(
+                        text = "Insira as credenciais do seu servidor de e-mail (Gmail, Outlook, Hostgator, Locaweb, etc.) para realizar o envio direto em segundo plano.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = smtpHost,
+                        onValueChange = { smtpHost = it },
+                        label = { Text("Servidor SMTP (Host)") },
+                        placeholder = { Text("smtp.brsolarengenharia.com.br ou smtp.gmail.com") },
+                        leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = smtpPort,
+                        onValueChange = { smtpPort = it },
+                        label = { Text("Porta SMTP") },
+                        placeholder = { Text("587 ou 465") },
+                        leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = smtpUsername,
+                        onValueChange = { smtpUsername = it },
+                        label = { Text("Usuário SMTP (Seu E-mail)") },
+                        placeholder = { Text("projeto@brsolarengenharia.com.br") },
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = smtpPassword,
+                        onValueChange = { smtpPassword = it },
+                        label = { Text("Senha SMTP (ou Senha de App)") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (sendMethod == "resend") {
+                    Text(
+                        text = "O Resend envia e-mails automaticamente em segundo plano. Cadastre-se grátis em resend.com para obter sua chave.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = sender,
+                        onValueChange = { sender = it },
+                        label = { Text("E-mail Remetente (Opcional)") },
+                        placeholder = { Text("onboarding@resend.dev") },
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = resendKey,
+                        onValueChange = { resendKey = it },
+                        label = { Text("Chave da API do Resend (re_...)") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (sendMethod == "webhook") {
+                    Text(
+                        text = "Envia os dados da vistoria e o arquivo PDF codificado em Base64 para a URL especificada.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = webhookUrl,
+                        onValueChange = { webhookUrl = it },
+                        label = { Text("URL do Webhook") },
+                        placeholder = { Text("https://hook.us1.make.com/...") },
+                        leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Cancelar")
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                userPreferences.saveEmailRecipient(recipient.trim())
+                                userPreferences.saveEmailSender(sender.trim())
+                                userPreferences.saveResendApiKey(resendKey.trim())
+                                userPreferences.saveSendMethod(sendMethod)
+                                userPreferences.saveWebhookUrl(webhookUrl.trim())
+                                userPreferences.saveSmtpHost(smtpHost.trim())
+                                userPreferences.saveSmtpPort(smtpPort.trim())
+                                userPreferences.saveSmtpUsername(smtpUsername.trim())
+                                userPreferences.saveSmtpPassword(smtpPassword) // don't trim password in case it contains deliberate trailing spaces
+                                Toast.makeText(context, "Configurações salvas!", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Salvar")
                     }
                 }
             }

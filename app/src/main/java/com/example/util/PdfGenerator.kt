@@ -1,4 +1,5 @@
 package com.example.util
+import androidx.core.net.toUri
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -12,6 +13,17 @@ import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import com.example.data.Inspection
 import java.io.ByteArrayOutputStream
+import android.content.ContentValues
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 object PdfGenerator {
     
@@ -282,5 +294,106 @@ object PdfGenerator {
         
         val destRect = RectF(left, top, left + destWidth, top + destHeight)
         canvas.drawBitmap(bitmap, null, destRect, null)
+    }
+
+    fun savePdfDirectly(context: Context, inspection: Inspection, companyName: String = "BR SOLAR") {
+        try {
+            val bytes = generatePdfBytes(context, inspection, companyName)
+            val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
+            val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
+            val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+            val fileName = "Vistoria_${clientNameClean.replace("\\s+".toRegex(), "_")}.pdf"
+            
+            var outputStream: OutputStream? = null
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    outputStream = resolver.openOutputStream(uri)
+                }
+            } else {
+                val targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!targetDir.exists()) {
+                    targetDir.mkdirs()
+                }
+                val file = File(targetDir, fileName)
+                outputStream = FileOutputStream(file)
+            }
+            
+            outputStream?.use {
+                it.write(bytes)
+            }
+            
+            android.widget.Toast.makeText(context, "PDF salvo nos Downloads.", android.widget.Toast.LENGTH_SHORT).show()
+
+            // Automatic / Fallback Email sending
+            val userPrefs = com.example.data.UserPreferences(context)
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    val recipient = userPrefs.emailRecipient.first() ?: ""
+                    val method = userPrefs.sendMethod.first() ?: "manual"
+                    val sender = userPrefs.emailSender.first() ?: ""
+                    val resendKey = userPrefs.resendApiKey.first() ?: ""
+                    val webhookUrl = userPrefs.webhookUrl.first() ?: ""
+                    val smtpHost = userPrefs.smtpHost.first() ?: "smtp.gmail.com"
+                    val smtpPort = userPrefs.smtpPort.first() ?: "587"
+                    val smtpUser = userPrefs.smtpUsername.first() ?: ""
+                    val smtpPass = userPrefs.smtpPassword.first() ?: ""
+
+                    val clientFullName = "${inspection.clientFirstName} ${inspection.clientLastName}".trim()
+                    val clientName = if (clientFullName.isNotBlank()) clientFullName else "Cliente Sem Nome"
+
+                    if (method == "manual") {
+                        // Launch standard email chooser with attachment
+                        com.example.util.EmailSender.sendViaIntent(context, bytes, clientName, recipient)
+                    } else {
+                        if (recipient.isBlank()) {
+                            android.widget.Toast.makeText(context, "Aviso: E-mail de destino não configurado nas opções de e-mail.", android.widget.Toast.LENGTH_LONG).show()
+                            // If auto configured but empty recipient, fallback to standard share intent so they don't lose the flow
+                            com.example.util.EmailSender.sendViaIntent(context, bytes, clientName, "")
+                            return@launch
+                        }
+
+                        android.widget.Toast.makeText(context, "Enviando PDF automaticamente para: $recipient...", android.widget.Toast.LENGTH_SHORT).show()
+                        val result = com.example.util.EmailSender.sendEmailAutomatic(
+                            context = context,
+                            pdfBytes = bytes,
+                            clientName = clientName,
+                            recipientEmail = recipient,
+                            senderEmail = sender,
+                            resendApiKey = resendKey,
+                            sendMethod = method,
+                            webhookUrl = webhookUrl,
+                            smtpHost = smtpHost,
+                            smtpPort = smtpPort,
+                            smtpUser = smtpUser,
+                            smtpPass = smtpPass
+                        )
+                        
+                        if (result.isSuccess) {
+                            android.widget.Toast.makeText(context, result.getOrNull() ?: "Enviado com sucesso!", android.widget.Toast.LENGTH_LONG).show()
+                        } else {
+                            val errMsg = result.exceptionOrNull()?.message ?: "Erro desconhecido"
+                            android.widget.Toast.makeText(context, "Erro no envio automático: $errMsg", android.widget.Toast.LENGTH_LONG).show()
+                            // Fallback to manual chooser on failure
+                            android.widget.Toast.makeText(context, "Iniciando compartilhamento manual...", android.widget.Toast.LENGTH_SHORT).show()
+                            com.example.util.EmailSender.sendViaIntent(context, bytes, clientName, recipient)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    android.widget.Toast.makeText(context, "Erro nas configurações de e-mail: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.widget.Toast.makeText(context, "Erro ao salvar PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 }
