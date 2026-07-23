@@ -116,7 +116,7 @@ fun LoginScreen(
                             painter = painterResource(id = com.example.R.drawable.br_solar),
                             contentDescription = "Logo BR Solar",
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Fit
                         )
                     }
                     

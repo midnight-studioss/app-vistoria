@@ -164,7 +164,9 @@ object EmailSender {
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "Enviar Vistoria via..."))
+            val chooser = Intent.createChooser(intent, "Enviar Vistoria via...")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
         } catch (e: Exception) {
             Toast.makeText(context, "Erro ao preparar e-mail manual: ${e.message}", Toast.LENGTH_LONG).show()
         }

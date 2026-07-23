@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -119,7 +120,7 @@ fun WizardScreen(
                     
                     val isNextEnabled = when (currentStep) {
                         0 -> inspection!!.latitude != null && inspection!!.longitude != null && inspection!!.address.isNotBlank()
-                        1 -> inspection!!.clientFirstName.isNotBlank() && inspection!!.clientLastName.isNotBlank()
+                        1 -> inspection!!.clientFirstName.isNotBlank()
                         2 -> inspection!!.connectionType.isNotBlank() && inspection!!.mainBreaker.isNotBlank() && inspection!!.voltage.isNotBlank()
                         3 -> inspection!!.roofType.isNotBlank() && inspection!!.roofInclination.isNotBlank() && inspection!!.inverterLocation.isNotBlank()
                         4 -> inspection!!.photoMeterUri != null && inspection!!.photoBreakerUri != null && inspection!!.photoPanelUri != null && inspection!!.photoRoofUri != null && inspection!!.photoGeneralUri != null
@@ -257,7 +258,7 @@ fun ClientDataStep(inspection: Inspection, viewModel: WizardViewModel) {
     OutlinedTextField(
         value = inspection.clientLastName,
         onValueChange = { v -> viewModel.updateField { it.copy(clientLastName = v) } },
-        label = { Text("Sobrenome do Cliente *") },
+        label = { Text("Sobrenome do Cliente") },
         modifier = Modifier.fillMaxWidth()
     )
 }
@@ -396,25 +397,49 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
     val currentPhotoType by viewModel.currentPhotoType.collectAsState()
     val photoAnalysisMessage by viewModel.photoAnalysisMessage.collectAsState()
     val isAnalyzingPhoto by viewModel.isAnalyzingPhoto.collectAsState()
+    
+    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
-    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap: Bitmap? ->
-        if (bitmap != null && currentPhotoType != null) {
-            viewModel.analyzePhoto(bitmap) { isClear ->
-                if (isClear) {
-                    val prefix = currentPhotoType?.replace("?", "")?.replace(" ", "_") ?: "photo"
-                    val fileUri = saveBitmapToCache(context, bitmap, prefix) ?: "content://photo_${System.currentTimeMillis()}"
-                    when (currentPhotoType) {
-                        "Medidor" -> viewModel.updateField(force = true) { it.copy(photoMeterUri = fileUri) }
-                        "Disjuntor" -> viewModel.updateField(force = true) { it.copy(photoBreakerUri = fileUri) }
-                        "Quadro Elétrico" -> viewModel.updateField(force = true) { it.copy(photoPanelUri = fileUri) }
-                        "Telhado" -> viewModel.updateField(force = true) { it.copy(photoRoofUri = fileUri) }
-                        "Onde vai ficar o inversor?" -> viewModel.updateField(force = true) { it.copy(photoGeneralUri = fileUri) }
-                    }
+    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success: Boolean ->
+        if (success && tempPhotoUri != null && currentPhotoType != null) {
+            try {
+                var bitmap: Bitmap? = null
+                context.contentResolver.openInputStream(tempPhotoUri!!)?.use {
+                    bitmap = BitmapFactory.decodeStream(it)
                 }
+                
+                if (bitmap != null) {
+                    val maxDim = 1024
+                    val scale = Math.min(maxDim.toFloat() / bitmap!!.width, maxDim.toFloat() / bitmap!!.height)
+                    val resizedBitmap = if(scale < 1) Bitmap.createScaledBitmap(bitmap!!, (bitmap!!.width * scale).toInt(), (bitmap!!.height * scale).toInt(), true) else bitmap!!
+                    
+                    viewModel.analyzePhoto(resizedBitmap) { isClear ->
+                        if (isClear) {
+                            val prefix = currentPhotoType?.replace("?", "")?.replace(" ", "_") ?: "photo"
+                            val fileUri = saveBitmapToCache(context, resizedBitmap, prefix) ?: tempPhotoUri.toString()
+                            when (currentPhotoType) {
+                                "Medidor" -> viewModel.updateField(force = true) { it.copy(photoMeterUri = fileUri) }
+                                "Disjuntor" -> viewModel.updateField(force = true) { it.copy(photoBreakerUri = fileUri) }
+                                "Quadro Elétrico" -> viewModel.updateField(force = true) { it.copy(photoPanelUri = fileUri) }
+                                "Telhado" -> viewModel.updateField(force = true) { it.copy(photoRoofUri = fileUri) }
+                                "Onde vai ficar o inversor?" -> viewModel.updateField(force = true) { it.copy(photoGeneralUri = fileUri) }
+                            }
+                        }
+                        viewModel.setCurrentPhotoType(null)
+                        tempPhotoUri = null
+                    }
+                } else {
+                    viewModel.setCurrentPhotoType(null)
+                    tempPhotoUri = null
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
                 viewModel.setCurrentPhotoType(null)
+                tempPhotoUri = null
             }
         } else {
             viewModel.setCurrentPhotoType(null)
+            tempPhotoUri = null
         }
     }
 
@@ -422,7 +447,12 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            takePictureLauncher.launch(null)
+            val dir = java.io.File(context.cacheDir, "images")
+            if (!dir.exists()) dir.mkdirs()
+            val file = java.io.File(dir, "temp_${System.currentTimeMillis()}.jpg")
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            tempPhotoUri = uri
+            takePictureLauncher.launch(uri)
         }
     }
 

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object PdfGenerator {
     
@@ -242,25 +243,42 @@ object PdfGenerator {
             
             for ((label, uriStr) in photos) {
                 val bmp = loadUriBitmap(context, uriStr)
+                val startX = if (col == 0) 40f else 310f
+                canvas.drawText(label, startX, rowY - 10f, labelPaint)
+                
                 if (bmp != null) {
-                    val startX = if (col == 0) 40f else 310f
-                    canvas.drawText(label, startX, rowY - 10f, labelPaint)
                     drawScaledBitmap(canvas, bmp, startX, rowY, colWidth, colHeight)
-                    
-                    col++
-                    if (col > 1) {
-                        col = 0
-                        rowY += colHeight + 40f
+                } else {
+                    // Draw a placeholder box
+                    val placeholderPaint = Paint().apply {
+                        color = Color.LTGRAY
+                        style = Paint.Style.FILL
                     }
+                    canvas.drawRect(startX, rowY, startX + colWidth, rowY + colHeight, placeholderPaint)
                     
-                    if (rowY + colHeight > 800f && label != photos.last().first) {
-                        pdfDocument.finishPage(page)
-                        pageInfo = PdfDocument.PageInfo.Builder(595, 842, pageNum++).create()
-                        page = pdfDocument.startPage(pageInfo)
-                        canvas = page.canvas
-                        rowY = 60f
-                        col = 0
+                    val textPaint = Paint().apply {
+                        color = Color.DKGRAY
+                        textSize = 10f
+                        isAntiAlias = true
+                        textAlign = Paint.Align.CENTER
                     }
+                    canvas.drawText("Imagem indisponível", startX + (colWidth / 2), rowY + (colHeight / 2) - 10f, textPaint)
+                    canvas.drawText("Pode estar em outro aparelho", startX + (colWidth / 2), rowY + (colHeight / 2) + 5f, textPaint)
+                }
+                
+                col++
+                if (col > 1) {
+                    col = 0
+                    rowY += colHeight + 40f
+                }
+                
+                if (rowY + colHeight > 800f && label != photos.last().first) {
+                    pdfDocument.finishPage(page)
+                    pageInfo = PdfDocument.PageInfo.Builder(595, 842, pageNum++).create()
+                    page = pdfDocument.startPage(pageInfo)
+                    canvas = page.canvas
+                    rowY = 60f
+                    col = 0
                 }
             }
             pdfDocument.finishPage(page)
@@ -276,9 +294,29 @@ object PdfGenerator {
         if (uriString.isNullOrBlank()) return null
         return try {
             val uri = Uri.parse(uriString)
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                BitmapFactory.decodeStream(inputStream)
+            var bmp: Bitmap? = null
+            if (uri.scheme == "file" || uriString.startsWith("/")) {
+                val path = uri.path ?: uriString
+                if (path != null) {
+                    val file = java.io.File(path)
+                    if (file.exists()) {
+                        bmp = BitmapFactory.decodeFile(path)
+                    } else {
+                        android.util.Log.e("PdfGenerator", "Arquivo de imagem não existe localmente: $path")
+                        return null
+                    }
+                }
             }
+            if (bmp == null) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        bmp = BitmapFactory.decodeStream(inputStream)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("PdfGenerator", "Erro ao carregar URI via resolver: ${e.message}")
+                }
+            }
+            bmp
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -297,47 +335,24 @@ object PdfGenerator {
     }
 
     fun savePdfDirectly(context: Context, inspection: Inspection, companyName: String = "BR SOLAR") {
-        try {
-            val bytes = generatePdfBytes(context, inspection, companyName)
-            val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
-            val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
-            val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
-            val fileName = "Vistoria_${clientNameClean.replace("\\s+".toRegex(), "_")}.pdf"
-            
-            var outputStream: OutputStream? = null
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val resolver = context.contentResolver
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    generatePdfBytes(context, inspection, companyName)
                 }
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                if (uri != null) {
-                    outputStream = resolver.openOutputStream(uri)
-                }
-            } else {
-                val targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                if (!targetDir.exists()) {
-                    targetDir.mkdirs()
-                }
-                val file = File(targetDir, fileName)
-                outputStream = FileOutputStream(file)
-            }
-            
-            outputStream?.use {
-                it.write(bytes)
-            }
-            
-            android.widget.Toast.makeText(context, "PDF salvo nos Downloads.", android.widget.Toast.LENGTH_SHORT).show()
-
-            // Automatic / Fallback Email sending
-            val userPrefs = com.example.data.UserPreferences(context)
-            CoroutineScope(Dispatchers.Main).launch {
-                try {
-                    val recipient = userPrefs.emailRecipient.first() ?: ""
-                    val method = userPrefs.sendMethod.first() ?: "manual"
+                val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
+                val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
+                val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+                
+                // Semre exibe a opção de compartilhar o PDF via WhatsApp, Email, etc.
+                com.example.util.EmailSender.sendViaIntent(context, bytes, clientNameClean, "")
+                
+                // Além disso, se o usuário configurou o webhook, tenta disparar no background
+                val userPrefs = com.example.data.UserPreferences(context)
+                val method = userPrefs.sendMethod.first() ?: "manual"
+                val recipient = userPrefs.emailRecipient.first() ?: ""
+                
+                if (method != "manual" && recipient.isNotBlank()) {
                     val sender = userPrefs.emailSender.first() ?: ""
                     val resendKey = userPrefs.resendApiKey.first() ?: ""
                     val webhookUrl = userPrefs.webhookUrl.first() ?: ""
@@ -346,54 +361,25 @@ object PdfGenerator {
                     val smtpUser = userPrefs.smtpUsername.first() ?: ""
                     val smtpPass = userPrefs.smtpPassword.first() ?: ""
 
-                    val clientFullName = "${inspection.clientFirstName} ${inspection.clientLastName}".trim()
-                    val clientName = if (clientFullName.isNotBlank()) clientFullName else "Cliente Sem Nome"
-
-                    if (method == "manual") {
-                        // Launch standard email chooser with attachment
-                        com.example.util.EmailSender.sendViaIntent(context, bytes, clientName, recipient)
-                    } else {
-                        if (recipient.isBlank()) {
-                            android.widget.Toast.makeText(context, "Aviso: E-mail de destino não configurado nas opções de e-mail.", android.widget.Toast.LENGTH_LONG).show()
-                            // If auto configured but empty recipient, fallback to standard share intent so they don't lose the flow
-                            com.example.util.EmailSender.sendViaIntent(context, bytes, clientName, "")
-                            return@launch
-                        }
-
-                        android.widget.Toast.makeText(context, "Enviando PDF automaticamente para: $recipient...", android.widget.Toast.LENGTH_SHORT).show()
-                        val result = com.example.util.EmailSender.sendEmailAutomatic(
-                            context = context,
-                            pdfBytes = bytes,
-                            clientName = clientName,
-                            recipientEmail = recipient,
-                            senderEmail = sender,
-                            resendApiKey = resendKey,
-                            sendMethod = method,
-                            webhookUrl = webhookUrl,
-                            smtpHost = smtpHost,
-                            smtpPort = smtpPort,
-                            smtpUser = smtpUser,
-                            smtpPass = smtpPass
-                        )
-                        
-                        if (result.isSuccess) {
-                            android.widget.Toast.makeText(context, result.getOrNull() ?: "Enviado com sucesso!", android.widget.Toast.LENGTH_LONG).show()
-                        } else {
-                            val errMsg = result.exceptionOrNull()?.message ?: "Erro desconhecido"
-                            android.widget.Toast.makeText(context, "Erro no envio automático: $errMsg", android.widget.Toast.LENGTH_LONG).show()
-                            // Fallback to manual chooser on failure
-                            android.widget.Toast.makeText(context, "Iniciando compartilhamento manual...", android.widget.Toast.LENGTH_SHORT).show()
-                            com.example.util.EmailSender.sendViaIntent(context, bytes, clientName, recipient)
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    android.widget.Toast.makeText(context, "Erro nas configurações de e-mail: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                    com.example.util.EmailSender.sendEmailAutomatic(
+                        context = context,
+                        pdfBytes = bytes,
+                        clientName = clientNameClean,
+                        recipientEmail = recipient,
+                        senderEmail = sender,
+                        resendApiKey = resendKey,
+                        sendMethod = method,
+                        webhookUrl = webhookUrl,
+                        smtpHost = smtpHost,
+                        smtpPort = smtpPort,
+                        smtpUser = smtpUser,
+                        smtpPass = smtpPass
+                    )
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                android.widget.Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            android.widget.Toast.makeText(context, "Erro ao salvar PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 }
