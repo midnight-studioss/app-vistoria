@@ -86,6 +86,19 @@ fun WizardScreen(
     val offlineSuccess by viewModel.offlineSuccess.collectAsState()
     val context = LocalContext.current
 
+    val currentStepIndex by viewModel.finalizeStepIndex.collectAsState()
+    val stepsList = remember {
+        listOf(
+            "Validando formulário",
+            "Validando fotos",
+            "Salvando no dispositivo",
+            "Sincronizando com o Firebase",
+            "Gerando PDF",
+            "Salvando PDF",
+            "Finalizando"
+        )
+    }
+
     if (isFinalizing) {
         Box(
             modifier = Modifier
@@ -96,7 +109,7 @@ fun WizardScreen(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
@@ -108,7 +121,7 @@ fun WizardScreen(
 
                 if (finalizeError != null) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack, // Placeholder icon
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Erro",
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(64.dp)
@@ -129,11 +142,11 @@ fun WizardScreen(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Sucesso Offline",
-                        tint = Color(0xFFFFA000), // Laranja/Amarelo para indicar pendente
+                        tint = Color(0xFFFFA000),
                         modifier = Modifier.size(64.dp)
                     )
                     Text(
-                        text = "Vistoria salva com sucesso no dispositivo.\n\nEla será sincronizada automaticamente quando houver conexão com a internet.",
+                        text = "Vistoria salva com sucesso no dispositivo.\n\nEla está protegida no aparelho e será sincronizada automaticamente assim que houver conexão com a internet.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onBackground,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -183,20 +196,34 @@ fun WizardScreen(
                         Text("Compartilhar e Sair")
                     }
                 } else {
-                    CircularProgressIndicator(
-                        progress = { finalizeProgress },
-                        modifier = Modifier.size(80.dp),
-                        strokeWidth = 6.dp,
-                    )
-                    Text(
-                        text = "${(finalizeProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.headlineSmall
-                    )
-                    Text(
-                        text = finalizeStatus,
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            stepsList.forEachIndexed { idx, label ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    if (idx < currentStepIndex) {
+                                        Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit.Unspecified)
+                                        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                    } else if (idx == currentStepIndex) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.5.dp)
+                                        Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    } else {
+                                        Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

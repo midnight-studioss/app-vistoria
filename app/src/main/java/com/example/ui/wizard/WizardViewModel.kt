@@ -115,11 +115,15 @@ class WizardViewModel(
     private val _offlineSuccess = MutableStateFlow(false)
     val offlineSuccess: StateFlow<Boolean> = _offlineSuccess.asStateFlow()
 
+    private val _finalizeStepIndex = MutableStateFlow(0)
+    val finalizeStepIndex: StateFlow<Int> = _finalizeStepIndex.asStateFlow()
+
     fun resetFinalizeState() {
         _isFinalizing.value = false
         _finalizeError.value = null
         _generatedPdfBytes.value = null
         _finalizeProgress.value = 0f
+        _finalizeStepIndex.value = 0
         _offlineSuccess.value = false
     }
 
@@ -131,60 +135,77 @@ class WizardViewModel(
             _finalizeError.value = null
             _generatedPdfBytes.value = null
             _offlineSuccess.value = false
+            _finalizeStepIndex.value = 0
             
             try {
-                // Etapa 1: Validar Formulário
+                // Etapa 0: Validar Formulário
+                _finalizeStepIndex.value = 0
                 _finalizeStatus.value = "Validando formulário..."
                 _finalizeProgress.value = 0.1f
-                kotlinx.coroutines.delay(500)
+                kotlinx.coroutines.delay(300)
                 validateForm(inspection)
                 
-                // Etapa 2: Validar Fotos
+                // Etapa 1: Validar Fotos
+                _finalizeStepIndex.value = 1
                 _finalizeStatus.value = "Validando fotos..."
-                _finalizeProgress.value = 0.3f
-                kotlinx.coroutines.delay(500)
+                _finalizeProgress.value = 0.25f
+                kotlinx.coroutines.delay(300)
                 validatePhotos(context, inspection)
                 
-                // Etapa 3: Salvar localmente
-                _finalizeStatus.value = "Salvando vistoria localmente..."
+                // Etapa 2: Salvar localmente no dispositivo (Room)
+                _finalizeStepIndex.value = 2
+                _finalizeStatus.value = "Salvando no dispositivo..."
                 _finalizeProgress.value = 0.4f
-                val pendingInspection = inspection.copy(syncState = com.example.data.SyncState.PENDING_SYNC, isCompleted = true)
+                val pendingInspection = inspection.copy(
+                    syncState = com.example.data.SyncState.PENDING_SYNC,
+                    isCompleted = true
+                )
                 repository.updateInspection(pendingInspection)
                 
-                // Etapa 4: Verificar conexão e enviar
+                // Etapa 3: Sincronizar com o Firebase
+                _finalizeStepIndex.value = 3
+                _finalizeStatus.value = "Sincronizando com o Firebase..."
+                _finalizeProgress.value = 0.55f
+                
+                var finalInspection = pendingInspection
+                var isSyncedOnline = false
+                
                 if (isOnline(context)) {
-                    _finalizeStatus.value = "Enviando informações para o Firebase..."
-                    _finalizeProgress.value = 0.5f
                     try {
                         kotlinx.coroutines.withTimeout(30000) {
                             repository.syncInspectionToCloud(pendingInspection)
                         }
-                        
-                        _finalizeStatus.value = "Aguardando confirmação do Firebase..."
-                        _finalizeProgress.value = 0.7f
-                        val syncedInspection = pendingInspection.copy(syncState = com.example.data.SyncState.SYNCED)
-                        repository.updateInspection(syncedInspection)
-                        kotlinx.coroutines.delay(500) // Extra tempo para garantir leitura se necessário
-                        
-                        // Etapa 5 e 6: Gerar e Salvar PDF
-                        _finalizeStatus.value = "Gerando e salvando PDF..."
-                        _finalizeProgress.value = 0.85f
-                        val pdfBytes = com.example.util.PdfGenerator.createAndSavePdf(context, syncedInspection, companyName)
-                        
-                        // Concluído (Etapa 7 fica na View para liberar o botão de Compartilhar)
-                        _finalizeStatus.value = "Concluído!"
-                        _finalizeProgress.value = 1.0f
-                        _generatedPdfBytes.value = pdfBytes
+                        finalInspection = pendingInspection.copy(syncState = com.example.data.SyncState.SYNCED)
+                        repository.updateInspection(finalInspection)
+                        isSyncedOnline = true
                     } catch (e: Exception) {
-                        // Salvo localmente, mas falhou na nuvem
                         val failedInspection = pendingInspection.copy(syncState = com.example.data.SyncState.SYNC_FAILED)
                         repository.updateInspection(failedInspection)
-                        _offlineSuccess.value = true
                         com.example.worker.SyncManager.scheduleSync(context)
                     }
                 } else {
-                    _offlineSuccess.value = true
                     com.example.worker.SyncManager.scheduleSync(context)
+                }
+                
+                // Etapa 4: Gerar PDF
+                _finalizeStepIndex.value = 4
+                _finalizeStatus.value = "Gerando PDF..."
+                _finalizeProgress.value = 0.75f
+                
+                // Etapa 5: Salvar PDF no dispositivo
+                _finalizeStepIndex.value = 5
+                _finalizeStatus.value = "Salvando PDF..."
+                _finalizeProgress.value = 0.9f
+                val pdfBytes = com.example.util.PdfGenerator.createAndSavePdf(context, finalInspection, companyName)
+                _generatedPdfBytes.value = pdfBytes
+                
+                // Etapa 6: Finalizando
+                _finalizeStepIndex.value = 6
+                _finalizeStatus.value = "Finalizando..."
+                _finalizeProgress.value = 1.0f
+                
+                if (!isSyncedOnline) {
+                    _offlineSuccess.value = true
                 }
                 
             } catch (e: Exception) {
