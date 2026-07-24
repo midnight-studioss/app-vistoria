@@ -91,7 +91,7 @@ object EmailSender {
                             Result.success("E-mail enviado com sucesso via Resend!")
                         } else {
                             val errorBody = response.body?.string() ?: ""
-                            Log.e(TAG, "Error from Resend API: $errorBody")
+                            Log.w(TAG, "Error from Resend API: $errorBody")
                             Result.failure(Exception("Erro na API do Resend (${response.code}): $errorBody"))
                         }
                     }
@@ -121,7 +121,7 @@ object EmailSender {
                             Result.success("Dados enviados com sucesso para o Webhook!")
                         } else {
                             val errorBody = response.body?.string() ?: ""
-                            Log.e(TAG, "Error from Webhook: $errorBody")
+                            Log.w(TAG, "Error from Webhook: $errorBody")
                             Result.failure(Exception("Erro no Webhook (${response.code}): $errorBody"))
                         }
                     }
@@ -138,7 +138,7 @@ object EmailSender {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception sending automatic email", e)
+            Log.w(TAG, "Exception sending automatic email", e)
             Result.failure(e)
         }
     }

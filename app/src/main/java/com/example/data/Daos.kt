@@ -40,6 +40,9 @@ interface InspectionDao {
     @Query("SELECT * FROM inspections WHERE id = :id")
     suspend fun getInspectionSync(id: Long): Inspection?
 
+    @Query("SELECT * FROM inspections")
+    suspend fun getAllInspectionsSync(): List<Inspection>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertInspection(inspection: Inspection): Long
     

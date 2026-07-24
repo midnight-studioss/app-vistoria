@@ -21,7 +21,7 @@ class SolarRepository(private val db: AppDatabase) {
         return try {
             FirebaseFirestore.getInstance()
         } catch (e: Throwable) {
-            Log.e("SolarRepository", "Firebase not initialized: ${e.message}")
+            Log.w("SolarRepository", "Firebase not initialized: ${e.message}")
             _syncStatus.value = "Erro: Firebase não inicializado (${e.message})"
             null
         }
@@ -46,7 +46,7 @@ class SolarRepository(private val db: AppDatabase) {
                     _syncStatus.value = "Sincronizado (Tempo Real Ativo)"
                 }
                 .addOnFailureListener { e ->
-                    Log.e("SolarRepository", "Firestore error creating inspection $uniqueId", e)
+                    Log.w("SolarRepository", "Firestore error creating inspection $uniqueId", e)
                     _syncStatus.value = "Erro ao enviar: ${e.message}"
                 }
         }
@@ -72,7 +72,7 @@ class SolarRepository(private val db: AppDatabase) {
                     _syncStatus.value = "Sincronizado (Tempo Real Ativo)"
                 }
                 .addOnFailureListener { e ->
-                    Log.e("SolarRepository", "Firestore error updating inspection ${updatedInspection.id}", e)
+                    Log.w("SolarRepository", "Firestore error updating inspection ${updatedInspection.id}", e)
                     _syncStatus.value = "Erro ao enviar: ${e.message}"
                 }
         }
@@ -87,7 +87,7 @@ class SolarRepository(private val db: AppDatabase) {
                     _syncStatus.value = "Sincronizado (Tempo Real Ativo)"
                 }
                 .addOnFailureListener { e ->
-                    Log.e("SolarRepository", "Firestore error deleting inspection $id", e)
+                    Log.w("SolarRepository", "Firestore error deleting inspection $id", e)
                     _syncStatus.value = "Erro ao deletar: ${e.message}"
                 }
         }
@@ -110,13 +110,22 @@ class SolarRepository(private val db: AppDatabase) {
         }
         firestore.collection("inspections").addSnapshotListener { snapshot, e ->
             if (e != null) {
-                Log.e("SolarRepository", "Listen failed.", e)
+                Log.w("SolarRepository", "Listen failed.", e)
                 _syncStatus.value = "Erro na sincronização automática: ${e.message}"
                 return@addSnapshotListener
             }
             if (snapshot != null) {
                 _syncStatus.value = "Sincronizado (Tempo Real Ativo)"
                 CoroutineScope(Dispatchers.IO).launch {
+                    val cloudIds = snapshot.documents.mapNotNull { it.id.toLongOrNull() }.toSet()
+                    val localInspections = db.inspectionDao().getAllInspectionsSync()
+                    for (localInsp in localInspections) {
+                        if (localInsp.id !in cloudIds) {
+                            db.inspectionDao().deleteInspectionById(localInsp.id)
+                            Log.d("SolarRepository", "Realtime Sync [Delete]: Removed inspection ${localInsp.id} locally as it was deleted in cloud.")
+                        }
+                    }
+
                     for (document in snapshot.documents) {
                         try {
                             val insp = document.toObject(Inspection::class.java)
@@ -144,7 +153,7 @@ class SolarRepository(private val db: AppDatabase) {
                                 }
                             }
                         } catch (ex: Exception) {
-                            Log.e("SolarRepository", "Error parsing doc realtime", ex)
+                            Log.w("SolarRepository", "Error parsing doc realtime", ex)
                         }
                     }
                 }
@@ -163,6 +172,15 @@ class SolarRepository(private val db: AppDatabase) {
             _syncStatus.value = "Conectando com a nuvem..."
             val result = firestore.collection("inspections").get().await()
             _syncStatus.value = "Sincronizando registros..."
+            val cloudIds = result.documents.mapNotNull { it.id.toLongOrNull() }.toSet()
+            val localInspections = db.inspectionDao().getAllInspectionsSync()
+            for (localInsp in localInspections) {
+                if (localInsp.id !in cloudIds) {
+                    db.inspectionDao().deleteInspectionById(localInsp.id)
+                    Log.d("SolarRepository", "Manual Sync [Delete]: Removed inspection ${localInsp.id} locally as it does not exist in cloud.")
+                }
+            }
+
             for (document in result) {
                 val insp = document.toObject(Inspection::class.java)
                 if (insp != null) {
@@ -188,7 +206,7 @@ class SolarRepository(private val db: AppDatabase) {
             _syncStatus.value = "Sincronizado (Tempo Real Ativo)"
             Log.d("SolarRepository", "Manual cloud pull finished successfully.")
         } catch (e: Exception) {
-            Log.e("SolarRepository", "Error in manual sync: ${e.message}")
+            Log.w("SolarRepository", "Error in manual sync: ${e.message}")
             _syncStatus.value = "Erro na sincronização manual: ${e.message}"
             throw e
         }

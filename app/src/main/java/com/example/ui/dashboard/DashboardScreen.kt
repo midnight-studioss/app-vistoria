@@ -51,9 +51,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import com.example.R
 import com.example.data.Inspection
 import kotlinx.coroutines.launch
@@ -121,29 +122,29 @@ fun DashboardScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-                    .height(200.dp)
+                    .heightIn(min = 210.dp)
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_solar_banner),
+                AsyncImage(
+                    model = R.drawable.img_solar_banner,
                     contentDescription = "Solar Banner Background",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop
                 )
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .matchParentSize()
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.Black.copy(alpha = 0.65f),
-                                    Color.Black.copy(alpha = 0.35f)
+                                    Color.Black.copy(alpha = 0.70f),
+                                    Color.Black.copy(alpha = 0.40f)
                                 )
                             )
                         )
                 )
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(horizontal = 24.dp, vertical = 24.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -259,6 +260,7 @@ fun DashboardScreen(
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = Color.White.copy(alpha = 0.2f),
@@ -747,7 +749,7 @@ fun EditInspectionDialog(
                     OutlinedTextField(
                         value = lastName,
                         onValueChange = { lastName = it },
-                        label = { Text("Sobrenome do Cliente") },
+                        label = { Text("Sobrenome do Cliente *") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     
@@ -878,6 +880,7 @@ fun EditInspectionDialog(
                             )
                         },
                         modifier = Modifier.weight(1f),
+                        enabled = firstName.isNotBlank() && lastName.isNotBlank(),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))

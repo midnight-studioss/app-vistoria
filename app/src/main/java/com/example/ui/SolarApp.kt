@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -58,8 +59,8 @@ fun LoadingSplashScreen() {
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Image(
-                    painter = painterResource(id = com.example.R.drawable.br_solar),
+                AsyncImage(
+                    model = com.example.R.drawable.br_solar,
                     contentDescription = "Logo BR Solar",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

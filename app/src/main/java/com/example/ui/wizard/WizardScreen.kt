@@ -47,6 +47,21 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+    val (height: Int, width: Int) = options.outHeight to options.outWidth
+    var inSampleSize = 1
+
+    if (height > reqHeight || width > reqWidth) {
+        val heightRatio = Math.round(height.toFloat() / reqHeight.toFloat())
+        val widthRatio = Math.round(width.toFloat() / reqHeight.toFloat())
+        inSampleSize = if (heightRatio > widthRatio) heightRatio else widthRatio
+    }
+    return if (inSampleSize < 1) 1 else inSampleSize
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,7 +135,7 @@ fun WizardScreen(
                     
                     val isNextEnabled = when (currentStep) {
                         0 -> inspection!!.latitude != null && inspection!!.longitude != null && inspection!!.address.isNotBlank()
-                        1 -> inspection!!.clientFirstName.isNotBlank()
+                        1 -> inspection!!.clientFirstName.isNotBlank() && inspection!!.clientLastName.isNotBlank()
                         2 -> inspection!!.connectionType.isNotBlank() && inspection!!.mainBreaker.isNotBlank() && inspection!!.voltage.isNotBlank()
                         3 -> inspection!!.roofType.isNotBlank() && inspection!!.roofInclination.isNotBlank() && inspection!!.inverterLocation.isNotBlank()
                         4 -> inspection!!.photoMeterUri != null && inspection!!.photoBreakerUri != null && inspection!!.photoPanelUri != null && inspection!!.photoRoofUri != null && inspection!!.photoGeneralUri != null
@@ -258,7 +273,7 @@ fun ClientDataStep(inspection: Inspection, viewModel: WizardViewModel) {
     OutlinedTextField(
         value = inspection.clientLastName,
         onValueChange = { v -> viewModel.updateField { it.copy(clientLastName = v) } },
-        label = { Text("Sobrenome do Cliente") },
+        label = { Text("Sobrenome do Cliente *") },
         modifier = Modifier.fillMaxWidth()
     )
 }
@@ -394,65 +409,125 @@ fun RoofStep(inspection: Inspection, viewModel: WizardViewModel) {
 @Composable
 fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val currentPhotoType by viewModel.currentPhotoType.collectAsState()
+    val tempPhotoUriStr by viewModel.tempPhotoUriStr.collectAsState()
     val photoAnalysisMessage by viewModel.photoAnalysisMessage.collectAsState()
     val isAnalyzingPhoto by viewModel.isAnalyzingPhoto.collectAsState()
-    
-    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success: Boolean ->
-        if (success && tempPhotoUri != null && currentPhotoType != null) {
-            try {
-                var bitmap: Bitmap? = null
-                context.contentResolver.openInputStream(tempPhotoUri!!)?.use {
-                    bitmap = BitmapFactory.decodeStream(it)
-                }
-                
-                if (bitmap != null) {
-                    val maxDim = 1024
-                    val scale = Math.min(maxDim.toFloat() / bitmap!!.width, maxDim.toFloat() / bitmap!!.height)
-                    val resizedBitmap = if(scale < 1) Bitmap.createScaledBitmap(bitmap!!, (bitmap!!.width * scale).toInt(), (bitmap!!.height * scale).toInt(), true) else bitmap!!
-                    
-                    viewModel.analyzePhoto(resizedBitmap) { isClear ->
-                        if (isClear) {
-                            val prefix = currentPhotoType?.replace("?", "")?.replace(" ", "_") ?: "photo"
-                            val fileUri = saveBitmapToCache(context, resizedBitmap, prefix) ?: tempPhotoUri.toString()
-                            when (currentPhotoType) {
-                                "Medidor" -> viewModel.updateField(force = true) { it.copy(photoMeterUri = fileUri) }
-                                "Disjuntor" -> viewModel.updateField(force = true) { it.copy(photoBreakerUri = fileUri) }
-                                "Quadro Elétrico" -> viewModel.updateField(force = true) { it.copy(photoPanelUri = fileUri) }
-                                "Telhado" -> viewModel.updateField(force = true) { it.copy(photoRoofUri = fileUri) }
-                                "Onde vai ficar o inversor?" -> viewModel.updateField(force = true) { it.copy(photoGeneralUri = fileUri) }
-                            }
-                        }
-                        viewModel.setCurrentPhotoType(null)
-                        tempPhotoUri = null
+        val prefs = context.getSharedPreferences("wizard_prefs", Context.MODE_PRIVATE)
+        val savedUriStr = prefs.getString("temp_photo_uri", null)
+        val savedPhotoType = prefs.getString("current_photo_type", null)
+        
+        if (success && savedUriStr != null && savedPhotoType != null) {
+            val restoredUri = Uri.parse(savedUriStr)
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    var bitmap: Bitmap? = null
+                    val options = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
                     }
-                } else {
-                    viewModel.setCurrentPhotoType(null)
-                    tempPhotoUri = null
+                    context.contentResolver.openInputStream(restoredUri)?.use {
+                        BitmapFactory.decodeStream(it, null, options)
+                    }
+                    options.inSampleSize = calculateInSampleSize(options, 1024, 1024)
+                    options.inJustDecodeBounds = false
+                    context.contentResolver.openInputStream(restoredUri)?.use {
+                        bitmap = BitmapFactory.decodeStream(it, null, options)
+                    }
+                    
+                    val prefix = savedPhotoType.replace("?", "").replace(" ", "_")
+                    var fileUri: String? = null
+                    
+                    if (bitmap != null) {
+                        val maxDim = 1024
+                        val w = bitmap!!.width
+                        val h = bitmap!!.height
+                        if (w > 0 && h > 0) {
+                            val scale = Math.min(maxDim.toFloat() / w, maxDim.toFloat() / h)
+                            val resizedBitmap = if (scale < 1f) {
+                                Bitmap.createScaledBitmap(bitmap!!, Math.max(1, (w * scale).toInt()), Math.max(1, (h * scale).toInt()), true)
+                            } else {
+                                bitmap!!
+                            }
+                            fileUri = saveBitmapToCache(context, resizedBitmap, prefix)
+                        }
+                    }
+                    
+                    val finalUri = fileUri ?: restoredUri.toString()
+                    
+                    withContext(Dispatchers.Main) {
+                        when (savedPhotoType) {
+                            "Medidor" -> viewModel.updateField(force = true) { it.copy(photoMeterUri = finalUri) }
+                            "Disjuntor" -> viewModel.updateField(force = true) { it.copy(photoBreakerUri = finalUri) }
+                            "Quadro Elétrico" -> viewModel.updateField(force = true) { it.copy(photoPanelUri = finalUri) }
+                            "Telhado" -> viewModel.updateField(force = true) { it.copy(photoRoofUri = finalUri) }
+                            "Onde vai ficar o inversor?" -> viewModel.updateField(force = true) { it.copy(photoGeneralUri = finalUri) }
+                        }
+                    }
+                } catch (t: Throwable) {
+                    t.printStackTrace()
+                    withContext(Dispatchers.Main) {
+                        when (savedPhotoType) {
+                            "Medidor" -> viewModel.updateField(force = true) { it.copy(photoMeterUri = restoredUri.toString()) }
+                            "Disjuntor" -> viewModel.updateField(force = true) { it.copy(photoBreakerUri = restoredUri.toString()) }
+                            "Quadro Elétrico" -> viewModel.updateField(force = true) { it.copy(photoPanelUri = restoredUri.toString()) }
+                            "Telhado" -> viewModel.updateField(force = true) { it.copy(photoRoofUri = restoredUri.toString()) }
+                            "Onde vai ficar o inversor?" -> viewModel.updateField(force = true) { it.copy(photoGeneralUri = restoredUri.toString()) }
+                        }
+                    }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                viewModel.setCurrentPhotoType(null)
-                tempPhotoUri = null
             }
-        } else {
-            viewModel.setCurrentPhotoType(null)
-            tempPhotoUri = null
         }
+        
+        prefs.edit()
+            .remove("temp_photo_uri")
+            .remove("current_photo_type")
+            .apply()
+        
+        viewModel.setCurrentPhotoType(null)
+        viewModel.setTempPhotoUriStr(null)
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
+            val type = viewModel.currentPhotoType.value ?: "foto"
             val dir = java.io.File(context.cacheDir, "images")
             if (!dir.exists()) dir.mkdirs()
             val file = java.io.File(dir, "temp_${System.currentTimeMillis()}.jpg")
             val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            tempPhotoUri = uri
+            
+            context.getSharedPreferences("wizard_prefs", Context.MODE_PRIVATE).edit()
+                .putString("temp_photo_uri", uri.toString())
+                .putString("current_photo_type", type)
+                .apply()
+                
+            viewModel.setTempPhotoUriStr(uri.toString())
             takePictureLauncher.launch(uri)
+        }
+    }
+
+    val launchCameraForType: (String) -> Unit = { type ->
+        viewModel.setCurrentPhotoType(type)
+        val dir = java.io.File(context.cacheDir, "images")
+        if (!dir.exists()) dir.mkdirs()
+        val file = java.io.File(dir, "temp_${System.currentTimeMillis()}.jpg")
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        
+        context.getSharedPreferences("wizard_prefs", Context.MODE_PRIVATE).edit()
+            .putString("temp_photo_uri", uri.toString())
+            .putString("current_photo_type", type)
+            .apply()
+            
+        viewModel.setTempPhotoUriStr(uri.toString())
+        
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            takePictureLauncher.launch(uri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -492,8 +567,7 @@ fun PhotosStep(inspection: Inspection, viewModel: WizardViewModel) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(enabled = !isAnalyzingPhoto) {
-                    viewModel.setCurrentPhotoType(type)
-                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    launchCameraForType(type)
                 },
             colors = CardDefaults.cardColors(
                 containerColor = if (isCaptured) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
@@ -830,7 +904,7 @@ fun saveSignatureToCache(context: Context, paths: List<LinePath>, width: Int, he
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
         Uri.fromFile(file).toString()
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         e.printStackTrace()
         null
     }
@@ -847,7 +921,7 @@ fun saveBitmapToCache(context: Context, bitmap: Bitmap, prefix: String): String?
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
         Uri.fromFile(file).toString()
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         e.printStackTrace()
         null
     }

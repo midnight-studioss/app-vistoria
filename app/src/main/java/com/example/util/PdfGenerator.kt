@@ -302,7 +302,7 @@ object PdfGenerator {
                     if (file.exists()) {
                         bmp = BitmapFactory.decodeFile(path)
                     } else {
-                        android.util.Log.e("PdfGenerator", "Arquivo de imagem não existe localmente: $path")
+                        android.util.Log.w("PdfGenerator", "Arquivo de imagem não existe localmente: $path")
                         return null
                     }
                 }
@@ -313,7 +313,7 @@ object PdfGenerator {
                         bmp = BitmapFactory.decodeStream(inputStream)
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("PdfGenerator", "Erro ao carregar URI via resolver: ${e.message}")
+                    android.util.Log.w("PdfGenerator", "Erro ao carregar URI via resolver: ${e.message}")
                 }
             }
             bmp
@@ -343,6 +343,39 @@ object PdfGenerator {
                 val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
                 val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
                 val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+                
+                // Salva o arquivo nos downloads
+                try {
+                    var outputStream: java.io.OutputStream? = null
+                    val fileName = "Vistoria_${clientNameClean}.pdf"
+                    
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        val resolver = context.contentResolver
+                        val contentValues = android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                        }
+                        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                        if (uri != null) {
+                            outputStream = resolver.openOutputStream(uri)
+                        }
+                    } else {
+                        val targetDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                        if (!targetDir.exists()) {
+                            targetDir.mkdirs()
+                        }
+                        val file = java.io.File(targetDir, fileName)
+                        outputStream = java.io.FileOutputStream(file)
+                    }
+                    
+                    outputStream?.use {
+                        it.write(bytes)
+                    }
+                    android.widget.Toast.makeText(context, "PDF salvo nos Downloads.", android.widget.Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
                 
                 // Semre exibe a opção de compartilhar o PDF via WhatsApp, Email, etc.
                 com.example.util.EmailSender.sendViaIntent(context, bytes, clientNameClean, "")

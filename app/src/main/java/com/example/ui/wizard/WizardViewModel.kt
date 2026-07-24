@@ -42,6 +42,13 @@ class WizardViewModel(
 
     private val _currentPhotoType = MutableStateFlow<String?>(null)
     val currentPhotoType: StateFlow<String?> = _currentPhotoType.asStateFlow()
+    
+    private val _tempPhotoUriStr = MutableStateFlow<String?>(null)
+    val tempPhotoUriStr: StateFlow<String?> = _tempPhotoUriStr.asStateFlow()
+
+    fun setTempPhotoUriStr(uri: String?) {
+        _tempPhotoUriStr.value = uri
+    }
 
     fun setCurrentPhotoType(type: String?) {
         _currentPhotoType.value = type
@@ -55,29 +62,10 @@ class WizardViewModel(
         viewModelScope.launch {
             _isAnalyzingPhoto.value = true
             try {
-                val (base64Image, _) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val outputStream = ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
-                    val encoded = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                    encoded to true
-                }
+                val (isClear, message) = com.example.util.AIVisionValidator.verifyImageLegibility(bitmap)
                 
-                val prompt = "Analise esta imagem com extremo rigor. Verifique se ela está nítida ou borrada. Além disso, verifique se cada letra ou texto presente na imagem está legível. Se a foto estiver borrada, desfocada, ou se qualquer texto estiver ilegível, responda exatamente com a palavra: YES. Se a foto estiver perfeitamente nítida e qualquer texto estiver legível, responda: NO."
-                
-                val request = GenerateContentRequest(
-                    contents = listOf(Content(
-                        parts = listOf(
-                            Part(text = prompt),
-                            Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
-                        )
-                    ))
-                )
-                
-                val response = RetrofitClient.service.generateContent(BuildConfig.GEMINI_API_KEY, request)
-                val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
-                
-                if (text.trim().uppercase().contains("YES")) {
-                    _photoAnalysisMessage.value = "Não conseguimos reconhecer sua foto. A imagem pode estar borrada ou com textos ilegíveis. Por favor, tire a foto novamente."
+                if (!isClear) {
+                    _photoAnalysisMessage.value = "Problema na foto: $message\nPor favor, tire a foto novamente."
                     onResult(false)
                 } else {
                     onResult(true)
