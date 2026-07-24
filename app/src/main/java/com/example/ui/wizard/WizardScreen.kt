@@ -78,6 +78,131 @@ fun WizardScreen(
     val inspection by viewModel.inspectionState.collectAsState()
     val currentStep by viewModel.currentStep.collectAsState()
 
+    val isFinalizing by viewModel.isFinalizing.collectAsState()
+    val finalizeProgress by viewModel.finalizeProgress.collectAsState()
+    val finalizeStatus by viewModel.finalizeStatus.collectAsState()
+    val finalizeError by viewModel.finalizeError.collectAsState()
+    val generatedPdfBytes by viewModel.generatedPdfBytes.collectAsState()
+    val offlineSuccess by viewModel.offlineSuccess.collectAsState()
+    val context = LocalContext.current
+
+    if (isFinalizing) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Finalizando Vistoria",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                if (finalizeError != null) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack, // Placeholder icon
+                        contentDescription = "Erro",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Text(
+                        text = "Erro: $finalizeError",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Button(
+                        onClick = { viewModel.resetFinalizeState() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Voltar e Corrigir")
+                    }
+                } else if (offlineSuccess) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Sucesso Offline",
+                        tint = Color(0xFFFFA000), // Laranja/Amarelo para indicar pendente
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Text(
+                        text = "Vistoria salva com sucesso no dispositivo.\n\nEla será sincronizada automaticamente quando houver conexão com a internet.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.resetFinalizeState()
+                            onNavigateBack()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
+                    ) {
+                        Text("Concluir e Voltar")
+                    }
+                } else if (generatedPdfBytes != null) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Sucesso",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Text(
+                        text = "Vistoria enviada e PDF gerado com sucesso!",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color(0xFF4CAF50),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Button(
+                        onClick = {
+                            val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main)
+                            scope.launch {
+                                try {
+                                    com.example.util.PdfGenerator.shareAndSendAutomaticEmails(
+                                        context,
+                                        inspection!!,
+                                        generatedPdfBytes!!
+                                    )
+                                    viewModel.updateField(force = true) { it.copy(isCompleted = true) }
+                                    viewModel.resetFinalizeState()
+                                    onNavigateBack()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
+                    ) {
+                        Text("Compartilhar e Sair")
+                    }
+                } else {
+                    CircularProgressIndicator(
+                        progress = { finalizeProgress },
+                        modifier = Modifier.size(80.dp),
+                        strokeWidth = 6.dp,
+                    )
+                    Text(
+                        text = "${(finalizeProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                    Text(
+                        text = finalizeStatus,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        }
+        return
+    }
+
     if (inspection == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -150,8 +275,7 @@ fun WizardScreen(
                             if (currentStep < stepTitles.size - 1) {
                                 viewModel.nextStep()
                             } else {
-                                viewModel.updateField(force = true) { it.copy(isCompleted = true) }
-                                onNavigateBack()
+                                viewModel.startFinalization(context, companyName)
                             }
                         },
                         enabled = isNextEnabled
@@ -698,18 +822,6 @@ fun SummaryStep(inspection: Inspection, companyName: String = "BR SOLAR") {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("Resumo da Vistoria", style = MaterialTheme.typography.titleLarge)
-        
-        Button(
-            onClick = {
-                com.example.util.PdfGenerator.savePdfDirectly(context, inspection, companyName)
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF", modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Salvar PDF")
-        }
     }
     
     Card(modifier = Modifier.fillMaxWidth()) {

@@ -97,6 +97,161 @@ class WizardViewModel(
         }
     }
 
+    private val _isFinalizing = MutableStateFlow(false)
+    val isFinalizing: StateFlow<Boolean> = _isFinalizing.asStateFlow()
+
+    private val _finalizeProgress = MutableStateFlow(0f)
+    val finalizeProgress: StateFlow<Float> = _finalizeProgress.asStateFlow()
+
+    private val _finalizeStatus = MutableStateFlow("")
+    val finalizeStatus: StateFlow<String> = _finalizeStatus.asStateFlow()
+
+    private val _finalizeError = MutableStateFlow<String?>(null)
+    val finalizeError: StateFlow<String?> = _finalizeError.asStateFlow()
+
+    private val _generatedPdfBytes = MutableStateFlow<ByteArray?>(null)
+    val generatedPdfBytes: StateFlow<ByteArray?> = _generatedPdfBytes.asStateFlow()
+
+    private val _offlineSuccess = MutableStateFlow(false)
+    val offlineSuccess: StateFlow<Boolean> = _offlineSuccess.asStateFlow()
+
+    fun resetFinalizeState() {
+        _isFinalizing.value = false
+        _finalizeError.value = null
+        _generatedPdfBytes.value = null
+        _finalizeProgress.value = 0f
+        _offlineSuccess.value = false
+    }
+
+    fun startFinalization(context: android.content.Context, companyName: String) {
+        val inspection = _inspectionState.value ?: return
+        
+        viewModelScope.launch {
+            _isFinalizing.value = true
+            _finalizeError.value = null
+            _generatedPdfBytes.value = null
+            _offlineSuccess.value = false
+            
+            try {
+                // Etapa 1: Validar Formulário
+                _finalizeStatus.value = "Validando formulário..."
+                _finalizeProgress.value = 0.1f
+                kotlinx.coroutines.delay(500)
+                validateForm(inspection)
+                
+                // Etapa 2: Validar Fotos
+                _finalizeStatus.value = "Validando fotos..."
+                _finalizeProgress.value = 0.3f
+                kotlinx.coroutines.delay(500)
+                validatePhotos(context, inspection)
+                
+                // Etapa 3: Salvar localmente
+                _finalizeStatus.value = "Salvando vistoria localmente..."
+                _finalizeProgress.value = 0.4f
+                val pendingInspection = inspection.copy(syncState = com.example.data.SyncState.PENDING_SYNC, isCompleted = true)
+                repository.updateInspection(pendingInspection)
+                
+                // Etapa 4: Verificar conexão e enviar
+                if (isOnline(context)) {
+                    _finalizeStatus.value = "Enviando informações para o Firebase..."
+                    _finalizeProgress.value = 0.5f
+                    try {
+                        kotlinx.coroutines.withTimeout(30000) {
+                            repository.syncInspectionToCloud(pendingInspection)
+                        }
+                        
+                        _finalizeStatus.value = "Aguardando confirmação do Firebase..."
+                        _finalizeProgress.value = 0.7f
+                        val syncedInspection = pendingInspection.copy(syncState = com.example.data.SyncState.SYNCED)
+                        repository.updateInspection(syncedInspection)
+                        kotlinx.coroutines.delay(500) // Extra tempo para garantir leitura se necessário
+                        
+                        // Etapa 5 e 6: Gerar e Salvar PDF
+                        _finalizeStatus.value = "Gerando e salvando PDF..."
+                        _finalizeProgress.value = 0.85f
+                        val pdfBytes = com.example.util.PdfGenerator.createAndSavePdf(context, syncedInspection, companyName)
+                        
+                        // Concluído (Etapa 7 fica na View para liberar o botão de Compartilhar)
+                        _finalizeStatus.value = "Concluído!"
+                        _finalizeProgress.value = 1.0f
+                        _generatedPdfBytes.value = pdfBytes
+                    } catch (e: Exception) {
+                        // Salvo localmente, mas falhou na nuvem
+                        val failedInspection = pendingInspection.copy(syncState = com.example.data.SyncState.SYNC_FAILED)
+                        repository.updateInspection(failedInspection)
+                        _offlineSuccess.value = true
+                        com.example.worker.SyncManager.scheduleSync(context)
+                    }
+                } else {
+                    _offlineSuccess.value = true
+                    com.example.worker.SyncManager.scheduleSync(context)
+                }
+                
+            } catch (e: Exception) {
+                _finalizeError.value = e.message ?: "Erro desconhecido durante a finalização."
+            }
+        }
+    }
+
+    private fun isOnline(context: android.content.Context): Boolean {
+        val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun validateForm(inspection: Inspection) {
+        if (inspection.clientFirstName.isBlank() || inspection.clientLastName.isBlank()) {
+            throw Exception("O nome e sobrenome do cliente são obrigatórios.")
+        }
+        if (inspection.connectionType.isBlank() || inspection.mainBreaker.isBlank() || inspection.voltage.isBlank()) {
+            throw Exception("Preencha todos os dados técnicos obrigatórios (Ligação, Disjuntor, Tensão).")
+        }
+        if (inspection.roofType.isBlank() || inspection.roofInclination.isBlank() || inspection.inverterLocation.isBlank()) {
+            throw Exception("Preencha os dados do telhado obrigatórios.")
+        }
+    }
+
+    private fun validatePhotos(context: android.content.Context, inspection: Inspection) {
+        val requiredPhotos = mapOf(
+            "Medidor" to inspection.photoMeterUri,
+            "Disjuntor" to inspection.photoBreakerUri,
+            "Quadro Elétrico" to inspection.photoPanelUri,
+            "Telhado" to inspection.photoRoofUri,
+            "Onde vai ficar o inversor?" to inspection.photoGeneralUri
+        )
+        
+        for ((name, uriStr) in requiredPhotos) {
+            if (uriStr.isNullOrBlank()) {
+                throw Exception("A foto '$name' é obrigatória e não foi tirada.")
+            }
+            
+            try {
+                val uri = android.net.Uri.parse(uriStr)
+                var valid = false
+                
+                if (uri.scheme == "file" || uriStr.startsWith("/")) {
+                    val file = java.io.File(uri.path ?: uriStr)
+                    if (file.exists() && file.length() > 0) {
+                        valid = true
+                    }
+                } else {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        if (stream.available() > 0) {
+                            valid = true
+                        }
+                    }
+                }
+                
+                if (!valid) {
+                    throw Exception("A foto '$name' parece estar corrompida ou vazia. Tire a foto novamente.")
+                }
+            } catch (e: Exception) {
+                throw Exception("Erro ao ler a foto '$name': ${e.message}. Tire a foto novamente.")
+            }
+        }
+    }
+
     fun forceSave() {
         saveJob?.cancel()
         val current = _inspectionState.value ?: return

@@ -57,6 +57,22 @@ class SolarRepository(private val db: AppDatabase) {
     
     fun getInspection(id: Long): Flow<Inspection?> = db.inspectionDao().getInspectionById(id)
     
+    suspend fun syncInspectionToCloud(inspection: Inspection) {
+        val firestore = getFirestore() ?: throw Exception("Firebase não disponível. Verifique sua conexão ou configurações.")
+        
+        val updatedInspection = inspection.copy(lastUpdated = System.currentTimeMillis())
+        db.inspectionDao().updateInspection(updatedInspection)
+        
+        Log.d("SolarRepository", "Starting strict sync for Inspection: ${updatedInspection.id}")
+        firestore.collection("inspections").document(updatedInspection.id.toString()).set(updatedInspection).await()
+        Log.d("SolarRepository", "Strict sync completed for Inspection: ${updatedInspection.id}")
+        _syncStatus.value = "Sincronizado (Tempo Real Ativo)"
+    }
+    
+    suspend fun getPendingInspections(): List<Inspection> {
+        return db.inspectionDao().getPendingSyncInspections()
+    }
+    
     suspend fun updateInspection(inspection: Inspection) {
         val updatedInspection = inspection.copy(lastUpdated = System.currentTimeMillis())
         db.inspectionDao().updateInspection(updatedInspection)

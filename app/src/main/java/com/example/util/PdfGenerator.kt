@@ -334,6 +334,94 @@ object PdfGenerator {
         canvas.drawBitmap(bitmap, null, destRect, null)
     }
 
+    suspend fun createAndSavePdf(context: Context, inspection: Inspection, companyName: String = "BR SOLAR"): ByteArray {
+        val bytes = withContext(Dispatchers.IO) {
+            generatePdfBytes(context, inspection, companyName)
+        }
+        val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
+        val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
+        val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+        
+        // Salva o arquivo nos downloads
+        withContext(Dispatchers.IO) {
+            var outputStream: java.io.OutputStream? = null
+            val fileName = "Vistoria_${clientNameClean}.pdf"
+            
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    outputStream = resolver.openOutputStream(uri)
+                } else {
+                    throw Exception("Falha ao criar o arquivo PDF.")
+                }
+            } else {
+                val targetDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                if (!targetDir.exists()) {
+                    targetDir.mkdirs()
+                }
+                val file = java.io.File(targetDir, fileName)
+                outputStream = java.io.FileOutputStream(file)
+            }
+            
+            outputStream?.use {
+                it.write(bytes)
+            } ?: throw Exception("Stream de saída nula.")
+        }
+        return bytes
+    }
+
+    suspend fun shareAndSendAutomaticEmails(context: Context, inspection: Inspection, bytes: ByteArray) {
+        val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
+        val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
+        val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+
+        // Sempre exibe a opção de compartilhar o PDF via WhatsApp, Email, etc.
+        com.example.util.EmailSender.sendViaIntent(context, bytes, clientNameClean, "")
+        
+        sendAutomaticEmailsOnly(context, inspection, bytes)
+    }
+
+    suspend fun sendAutomaticEmailsOnly(context: Context, inspection: Inspection, bytes: ByteArray) {
+        val namePart = "${inspection.clientFirstName}_${inspection.clientLastName}".trim()
+        val baseName = if (namePart.isNotBlank()) namePart else "Cliente_Sem_Nome"
+        val clientNameClean = baseName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+
+        val userPrefs = com.example.data.UserPreferences(context)
+        val method = userPrefs.sendMethod.first() ?: "manual"
+        val recipient = userPrefs.emailRecipient.first() ?: ""
+        
+        if (method != "manual" && recipient.isNotBlank()) {
+            val sender = userPrefs.emailSender.first() ?: ""
+            val resendKey = userPrefs.resendApiKey.first() ?: ""
+            val webhookUrl = userPrefs.webhookUrl.first() ?: ""
+            val smtpHost = userPrefs.smtpHost.first() ?: "smtp.gmail.com"
+            val smtpPort = userPrefs.smtpPort.first() ?: "587"
+            val smtpUser = userPrefs.smtpUsername.first() ?: ""
+            val smtpPass = userPrefs.smtpPassword.first() ?: ""
+
+            com.example.util.EmailSender.sendEmailAutomatic(
+                context = context,
+                pdfBytes = bytes,
+                clientName = clientNameClean,
+                recipientEmail = recipient,
+                senderEmail = sender,
+                resendApiKey = resendKey,
+                sendMethod = method,
+                webhookUrl = webhookUrl,
+                smtpHost = smtpHost,
+                smtpPort = smtpPort,
+                smtpUser = smtpUser,
+                smtpPass = smtpPass
+            )
+        }
+    }
+
     fun savePdfDirectly(context: Context, inspection: Inspection, companyName: String = "BR SOLAR") {
         CoroutineScope(Dispatchers.Main).launch {
             try {

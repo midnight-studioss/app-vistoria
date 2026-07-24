@@ -40,6 +40,9 @@ interface InspectionDao {
     @Query("SELECT * FROM inspections WHERE id = :id")
     suspend fun getInspectionSync(id: Long): Inspection?
 
+    @Query("SELECT * FROM inspections WHERE syncState = 'PENDING_SYNC' OR syncState = 'SYNC_FAILED'")
+    suspend fun getPendingSyncInspections(): List<Inspection>
+
     @Query("SELECT * FROM inspections")
     suspend fun getAllInspectionsSync(): List<Inspection>
 

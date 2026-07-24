@@ -35,6 +35,14 @@ data class Project(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+object SyncState {
+    const val DRAFT = "DRAFT"
+    const val PENDING_SYNC = "PENDING_SYNC"
+    const val SYNCING = "SYNCING"
+    const val SYNCED = "SYNCED"
+    const val SYNC_FAILED = "SYNC_FAILED"
+}
+
 @Entity(
     tableName = "inspections",
     foreignKeys = [
@@ -100,7 +108,8 @@ data class Inspection(
     // Status
     val currentStep: Int = 0,
     @get:com.google.firebase.firestore.PropertyName("isCompleted") @set:com.google.firebase.firestore.PropertyName("isCompleted") var isCompleted: Boolean = false,
-    val lastUpdated: Long = System.currentTimeMillis()
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val syncState: String = SyncState.DRAFT
 )
 
 @Entity(

@@ -17,6 +17,9 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    
+    com.example.worker.SyncManager.scheduleSync(this)
+    
     setContent {
       com.example.ui.SolarApp()
     }
